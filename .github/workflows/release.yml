@@ -40,10 +40,6 @@ jobs:
             target: x86_64-unknown-linux-gnu
             artifact_name: jarvis
             asset_name: jarvis-linux-x86_64
-          - os: macos-13  # Intel-based macOS for x86_64 builds
-            target: x86_64-apple-darwin
-            artifact_name: jarvis
-            asset_name: jarvis-macos-x86_64
           - os: macos-latest  # ARM64-based macOS (M1) for aarch64 builds
             target: aarch64-apple-darwin
             artifact_name: jarvis
