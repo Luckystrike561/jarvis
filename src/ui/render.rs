@@ -8,24 +8,44 @@ use ratatui::{
 };
 
 pub fn render(frame: &mut Frame, app: &App) {
-    // Main layout: Header + Body + Footer
-    let main_chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
+    // Main layout: Header + (optional Search) + Body + Footer
+    let main_constraints = if app.search_mode {
+        vec![
+            Constraint::Length(3), // Header
+            Constraint::Length(3), // Search bar
+            Constraint::Min(0),    // Body
+            Constraint::Length(1), // Footer
+        ]
+    } else {
+        vec![
             Constraint::Length(3), // Header
             Constraint::Min(0),    // Body
             Constraint::Length(1), // Footer
-        ])
+        ]
+    };
+
+    let main_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(main_constraints)
         .split(frame.area());
 
-    // Render header
-    render_header(frame, main_chunks[0]);
+    let (body_idx, footer_idx) = if app.search_mode {
+        // Render header
+        render_header(frame, main_chunks[0]);
+        // Render search bar
+        render_search_bar(frame, app, main_chunks[1]);
+        (2, 3)
+    } else {
+        // Render header
+        render_header(frame, main_chunks[0]);
+        (1, 2)
+    };
 
     // Split body into left (scripts) and right (details/output)
     let body_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
-        .split(main_chunks[1]);
+        .split(main_chunks[body_idx]);
 
     // Render script tree on left
     render_script_tree(frame, app, body_chunks[0]);
@@ -44,7 +64,7 @@ pub fn render(frame: &mut Frame, app: &App) {
     }
 
     // Render footer
-    render_footer(frame, app, main_chunks[2]);
+    render_footer(frame, app, main_chunks[footer_idx]);
 }
 
 fn render_header(frame: &mut Frame, area: Rect) {
@@ -64,6 +84,20 @@ fn render_header(frame: &mut Frame, area: Rect) {
         .style(Style::default().bg(Color::Black));
 
     frame.render_widget(header, area);
+}
+
+fn render_search_bar(frame: &mut Frame, app: &App, area: Rect) {
+    let search_text = format!("🔍 Search: {}", app.search_query);
+    let search_widget = Paragraph::new(search_text)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Press ESC to exit search")
+                .border_style(Style::default().fg(Color::Yellow)),
+        )
+        .style(Style::default().fg(Color::Yellow));
+
+    frame.render_widget(search_widget, area);
 }
 
 fn render_script_tree(frame: &mut Frame, app: &App, area: Rect) {
@@ -230,11 +264,15 @@ fn render_output(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
-    let help_text = match app.focus {
-        FocusPane::ScriptList => {
-            "[↑↓/jk] Navigate  [←→/hl] Collapse/Expand  [Enter] Toggle/Execute  [Tab] Switch  [Q] Quit"
+    let help_text = if app.search_mode {
+        "[↑↓] Navigate  [Enter] Execute  [ESC] Exit Search  [Backspace] Delete"
+    } else {
+        match app.focus {
+            FocusPane::ScriptList => {
+                "[↑↓/jk] Navigate  [←→/hl] Collapse/Expand  [/] Search  [Enter] Toggle/Execute  [Tab] Switch  [Q] Quit"
+            }
+            FocusPane::Details => "[Tab] Switch Pane  [/] Search  [Q] Quit",
         }
-        FocusPane::Details => "[Tab] Switch Pane  [Q] Quit",
     };
 
     let footer = Paragraph::new(help_text)

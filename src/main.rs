@@ -122,35 +122,25 @@ async fn run_app(
         terminal.draw(|f| ui::render(f, app))?;
 
         if let Event::Key(key) = event::read()? {
-            // Global keybindings
-            match key.code {
-                KeyCode::Char('q') | KeyCode::Char('Q') => {
-                    app.should_quit = true;
-                }
-                KeyCode::Tab => {
-                    app.toggle_focus();
-                }
-                KeyCode::Down | KeyCode::Char('j') => {
-                    app.next();
-                }
-                KeyCode::Up | KeyCode::Char('k') => {
-                    app.previous();
-                }
-                KeyCode::Left | KeyCode::Char('h') => {
-                    app.handle_left();
-                }
-                KeyCode::Right | KeyCode::Char('l') => {
-                    app.handle_right();
-                }
-                KeyCode::Enter => {
-                    // Handle Enter based on selected item
-                    if let Some(item) = app.selected_item() {
-                        match item {
-                            ui::app::TreeItem::Category(category) => {
-                                // Toggle category expansion
-                                app.toggle_category(&category);
-                            }
-                            ui::app::TreeItem::Function(func) => {
+            // Handle search mode separately
+            if app.search_mode {
+                match key.code {
+                    KeyCode::Esc => {
+                        app.exit_search_mode();
+                    }
+                    KeyCode::Down => {
+                        app.next();
+                    }
+                    KeyCode::Up => {
+                        app.previous();
+                    }
+                    KeyCode::Backspace => {
+                        app.search_pop_char();
+                    }
+                    KeyCode::Enter => {
+                        // Execute function if one is selected
+                        if let Some(item) = app.selected_item() {
+                            if let ui::app::TreeItem::Function(func) = item {
                                 // Execute function - clone data first
                                 let func_name = func.name.clone();
                                 let category = func.category.clone();
@@ -209,8 +199,105 @@ async fn run_app(
                             }
                         }
                     }
+                    KeyCode::Char(c) => {
+                        app.search_push_char(c);
+                    }
+                    _ => {}
                 }
-                _ => {}
+            } else {
+                // Normal mode keybindings
+                match key.code {
+                    KeyCode::Char('q') | KeyCode::Char('Q') => {
+                        app.should_quit = true;
+                    }
+                    KeyCode::Char('/') => {
+                        app.enter_search_mode();
+                    }
+                    KeyCode::Tab => {
+                        app.toggle_focus();
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        app.next();
+                    }
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        app.previous();
+                    }
+                    KeyCode::Left | KeyCode::Char('h') => {
+                        app.handle_left();
+                    }
+                    KeyCode::Right | KeyCode::Char('l') => {
+                        app.handle_right();
+                    }
+                    KeyCode::Enter => {
+                        // Handle Enter based on selected item
+                        if let Some(item) = app.selected_item() {
+                            match item {
+                                ui::app::TreeItem::Category(category) => {
+                                    // Toggle category expansion
+                                    app.toggle_category(&category);
+                                }
+                                ui::app::TreeItem::Function(func) => {
+                                    // Execute function - clone data first
+                                    let func_name = func.name.clone();
+                                    let category = func.category.clone();
+                                    let display_name = func.display_name.clone();
+
+                                    // Find the script file
+                                    if let Some(script_file) =
+                                        script_files.iter().find(|s| s.category == category)
+                                    {
+                                        // Suspend TUI for interactive execution
+                                        suspend_tui(terminal)?;
+
+                                        // Clear screen and show execution message
+                                        println!("\n╔════════════════════════════════════════╗");
+                                        println!("║  Executing: {:<27}║", display_name);
+                                        println!("╚════════════════════════════════════════╝\n");
+
+                                        // Execute the function with full terminal access
+                                        let exit_code = script::execute_function_interactive(
+                                            &script_file.path,
+                                            &func_name,
+                                        )?;
+
+                                        // Show completion status
+                                        println!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                                        if exit_code == 0 {
+                                            println!("✅ Completed successfully!");
+                                        } else {
+                                            println!("❌ Failed with exit code: {}", exit_code);
+                                        }
+                                        println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                                        println!("\nPress Enter to return to JARVIS...");
+
+                                        // Wait for user to press Enter
+                                        let mut input = String::new();
+                                        std::io::stdin().read_line(&mut input)?;
+
+                                        // Store execution result in app output
+                                        app.output.clear();
+                                        app.output.push(format!("Function: {}", display_name));
+                                        app.output.push(format!("Category: {}", category));
+                                        app.output.push("".to_string());
+                                        if exit_code == 0 {
+                                            app.output
+                                                .push("Status: ✅ Completed successfully!".to_string());
+                                        } else {
+                                            app.output.push(format!(
+                                                "Status: ❌ Failed with exit code: {}",
+                                                exit_code
+                                            ));
+                                        }
+
+                                        // Resume TUI
+                                        resume_tui(terminal)?;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
             }
         }
 

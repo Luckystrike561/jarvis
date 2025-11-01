@@ -25,6 +25,8 @@ pub struct App {
     pub should_quit: bool,
     pub focus: FocusPane,
     pub expanded_categories: Vec<String>,
+    pub search_mode: bool,
+    pub search_query: String,
 }
 
 impl App {
@@ -38,6 +40,8 @@ impl App {
             should_quit: false,
             focus: FocusPane::ScriptList,
             expanded_categories: Vec::new(),
+            search_mode: false,
+            search_query: String::new(),
         }
     }
 
@@ -117,22 +121,62 @@ impl App {
         let categories = self.categories();
 
         for category in categories {
-            items.push(TreeItem::Category(category.clone()));
+            // Filter functions for this category
+            let funcs: Vec<&ScriptFunction> = self
+                .functions
+                .iter()
+                .filter(|f| f.category == category)
+                .filter(|f| self.matches_search(f))
+                .collect();
 
-            if self.is_category_expanded(&category) {
-                let funcs: Vec<&ScriptFunction> = self
-                    .functions
-                    .iter()
-                    .filter(|f| f.category == category)
-                    .collect();
+            // Only show category if it has matching functions (when searching)
+            if !self.search_mode || !funcs.is_empty() {
+                items.push(TreeItem::Category(category.clone()));
 
-                for func in funcs {
-                    items.push(TreeItem::Function(func.clone()));
+                // Auto-expand categories when searching, or show if manually expanded
+                if self.search_mode || self.is_category_expanded(&category) {
+                    for func in funcs {
+                        items.push(TreeItem::Function(func.clone()));
+                    }
                 }
             }
         }
 
         items
+    }
+
+    fn matches_search(&self, func: &ScriptFunction) -> bool {
+        if !self.search_mode || self.search_query.is_empty() {
+            return true;
+        }
+
+        let query = self.search_query.to_lowercase();
+        func.display_name.to_lowercase().contains(&query)
+            || func.name.to_lowercase().contains(&query)
+            || func.description.to_lowercase().contains(&query)
+            || func.category.to_lowercase().contains(&query)
+    }
+
+    pub fn enter_search_mode(&mut self) {
+        self.search_mode = true;
+        self.search_query.clear();
+        self.selected_index = 0;
+    }
+
+    pub fn exit_search_mode(&mut self) {
+        self.search_mode = false;
+        self.search_query.clear();
+        self.selected_index = 0;
+    }
+
+    pub fn search_push_char(&mut self, c: char) {
+        self.search_query.push(c);
+        self.selected_index = 0; // Reset selection when search changes
+    }
+
+    pub fn search_pop_char(&mut self) {
+        self.search_query.pop();
+        self.selected_index = 0; // Reset selection when search changes
     }
 
     pub fn selected_item(&self) -> Option<TreeItem> {
