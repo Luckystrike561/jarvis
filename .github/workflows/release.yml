@@ -136,11 +136,14 @@ jobs:
           \`\`\`
           EOF
           
-          # Create release with all artifacts
+          # Create release first without assets
           gh release create ${VERSION} \
             --title "Release ${VERSION}" \
             --notes-file release_notes.md \
-            artifacts/*/* || true
+            || echo "Release may already exist"
+          
+          # Upload all artifacts
+          find artifacts -type f -exec gh release upload ${VERSION} {} \; || true
 
   publish-cargo:
     name: Publish to crates.io
