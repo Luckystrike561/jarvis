@@ -122,6 +122,17 @@ async fn run_app(
         terminal.draw(|f| ui::render(f, app))?;
 
         if let Event::Key(key) = event::read()? {
+            // Handle info modal close first
+            if app.show_info {
+                match key.code {
+                    KeyCode::Char('i') | KeyCode::Esc => {
+                        app.toggle_info();
+                    }
+                    _ => {}
+                }
+                continue;
+            }
+
             // Handle search mode separately
             if app.search_mode {
                 match key.code {
@@ -209,6 +220,9 @@ async fn run_app(
                 match key.code {
                     KeyCode::Char('q') | KeyCode::Char('Q') => {
                         app.should_quit = true;
+                    }
+                    KeyCode::Char('i') => {
+                        app.toggle_info();
                     }
                     KeyCode::Char('/') => {
                         app.enter_search_mode();

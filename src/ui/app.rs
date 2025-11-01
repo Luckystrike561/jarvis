@@ -27,6 +27,7 @@ pub struct App {
     pub expanded_categories: Vec<String>,
     pub search_mode: bool,
     pub search_query: String,
+    pub show_info: bool,
 }
 
 impl App {
@@ -42,6 +43,7 @@ impl App {
             expanded_categories: Vec::new(),
             search_mode: false,
             search_query: String::new(),
+            show_info: false,
         }
     }
 
@@ -50,6 +52,10 @@ impl App {
             FocusPane::ScriptList => FocusPane::Details,
             FocusPane::Details => FocusPane::ScriptList,
         };
+    }
+
+    pub fn toggle_info(&mut self) {
+        self.show_info = !self.show_info;
     }
 
     pub fn toggle_category(&mut self, category: &str) {

@@ -3,7 +3,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
     Frame,
 };
 
@@ -65,11 +65,16 @@ pub fn render(frame: &mut Frame, app: &App) {
 
     // Render footer
     render_footer(frame, app, main_chunks[footer_idx]);
+
+    // Render info modal on top if show_info is true
+    if app.show_info {
+        render_info_modal(frame, frame.area());
+    }
 }
 
 fn render_header(frame: &mut Frame, area: Rect) {
     let header_text = vec![Line::from(vec![Span::styled(
-        "  JARVIS v2.0 - Just Another Rather Very Intelligent System  ",
+        "  JARVIS - Just Another Rather Very Intelligent System  ",
         Style::default()
             .fg(Color::Cyan)
             .add_modifier(Modifier::BOLD),
@@ -269,9 +274,9 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
     } else {
         match app.focus {
             FocusPane::ScriptList => {
-                "[↑↓/jk] Navigate  [←→/hl] Collapse/Expand  [/] Search  [Enter] Toggle/Execute  [Tab] Switch  [Q] Quit"
+                "[↑↓/jk] Navigate  [←→/hl] Collapse/Expand  [/] Search  [i] Info  [Enter] Toggle/Execute  [Tab] Switch  [Q] Quit"
             }
-            FocusPane::Details => "[Tab] Switch Pane  [/] Search  [Q] Quit",
+            FocusPane::Details => "[Tab] Switch Pane  [/] Search  [i] Info  [Q] Quit",
         }
     };
 
@@ -280,4 +285,74 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
         .block(Block::default());
 
     frame.render_widget(footer, area);
+}
+
+fn render_info_modal(frame: &mut Frame, area: Rect) {
+    // Get version from Cargo.toml at compile time
+    let version = env!("CARGO_PKG_VERSION");
+    let authors = env!("CARGO_PKG_AUTHORS");
+    let description = env!("CARGO_PKG_DESCRIPTION");
+
+    // Create a centered modal
+    let modal_width = 60;
+    let modal_height = 14;
+    let modal_x = (area.width.saturating_sub(modal_width)) / 2;
+    let modal_y = (area.height.saturating_sub(modal_height)) / 2;
+
+    let modal_area = Rect {
+        x: modal_x,
+        y: modal_y,
+        width: modal_width,
+        height: modal_height,
+    };
+
+    // Clear the background
+    frame.render_widget(Clear, modal_area);
+
+    // Create the modal content
+    let info_text = vec![
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            "JARVIS",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )]),
+        Line::from(vec![Span::styled(
+            "Just Another Rather Very Intelligent System",
+            Style::default().fg(Color::White),
+        )]),
+        Line::from(""),
+        Line::from("────────────────────────────────────────────────────────"),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("Version: ", Style::default().fg(Color::Gray)),
+            Span::styled(version, Style::default().fg(Color::Yellow)),
+        ]),
+        Line::from(vec![
+            Span::styled("Authors: ", Style::default().fg(Color::Gray)),
+            Span::raw(authors),
+        ]),
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            description,
+            Style::default().fg(Color::White).add_modifier(Modifier::ITALIC),
+        )]),
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            "Press [i] or [ESC] to close",
+            Style::default().fg(Color::Gray),
+        )]),
+    ];
+
+    let info_modal = Paragraph::new(info_text)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" About ")
+                .border_style(Style::default().fg(Color::Cyan)),
+        )
+        .style(Style::default().bg(Color::Black));
+
+    frame.render_widget(info_modal, modal_area);
 }
