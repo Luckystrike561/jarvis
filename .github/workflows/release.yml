@@ -12,26 +12,8 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  create-release:
-    name: Create Release
-    runs-on: ubuntu-latest
-    outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
-    steps:
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref }}
-          release_name: Release ${{ github.ref }}
-          draft: false
-          prerelease: false
-
   build-release:
     name: Build Release
-    needs: create-release
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -84,32 +66,11 @@ jobs:
         if: matrix.os != 'windows-latest'
         run: strip target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
       
-      - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
-          asset_name: ${{ matrix.asset_name }}
-          asset_content_type: application/octet-stream
-      
       - name: Create tarball (Linux/macOS)
         if: matrix.os != 'windows-latest'
         run: |
           cd target/${{ matrix.target }}/release
           tar czf ${{ matrix.asset_name }}.tar.gz ${{ matrix.artifact_name }}
-      
-      - name: Upload tarball (Linux/macOS)
-        if: matrix.os != 'windows-latest'
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: target/${{ matrix.target }}/release/${{ matrix.asset_name }}.tar.gz
-          asset_name: ${{ matrix.asset_name }}.tar.gz
-          asset_content_type: application/gzip
       
       - name: Create zip (Windows)
         if: matrix.os == 'windows-latest'
@@ -118,20 +79,72 @@ jobs:
           cd target/${{ matrix.target }}/release
           Compress-Archive -Path ${{ matrix.artifact_name }} -DestinationPath ${{ matrix.asset_name }}.zip
       
-      - name: Upload zip (Windows)
-        if: matrix.os == 'windows-latest'
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
         with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: target/${{ matrix.target }}/release/${{ matrix.asset_name }}.zip
-          asset_name: ${{ matrix.asset_name }}.zip
-          asset_content_type: application/zip
+          name: ${{ matrix.asset_name }}
+          path: |
+            target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+            target/${{ matrix.target }}/release/${{ matrix.asset_name }}.tar.gz
+            target/${{ matrix.target }}/release/${{ matrix.asset_name }}.zip
+          if-no-files-found: ignore
+
+  create-release:
+    name: Create Release
+    needs: build-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      
+      - name: Display structure of downloaded files
+        run: ls -R artifacts
+      
+      - name: Create Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          
+          # Create release notes
+          cat << EOF > release_notes.md
+          # Jarvis ${VERSION}
+          
+          ## Features
+          - Interactive TUI for running bash functions from jarvis.sh scripts
+          - Fuzzy finder (fzf) integration for easy function selection
+          - Nix flake support for reproducible builds
+          - Cross-platform support (Linux, macOS, Windows)
+          
+          ## Installation
+          
+          ### Using Nix
+          \`\`\`bash
+          nix run github:Luckystrike561/jarvis
+          \`\`\`
+          
+          ### From Binary
+          Download the appropriate binary for your platform from the assets below.
+          
+          ### From Source
+          \`\`\`bash
+          cargo build --release
+          \`\`\`
+          EOF
+          
+          # Create release with all artifacts
+          gh release create ${VERSION} \
+            --title "Release ${VERSION}" \
+            --notes-file release_notes.md \
+            artifacts/*/* || true
 
   publish-cargo:
     name: Publish to crates.io
-    needs: build-release
+    needs: create-release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
