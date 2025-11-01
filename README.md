@@ -68,19 +68,32 @@ Jarvis doesn't care what your scripts do - it just makes them easy to discover, 
 
 ### Prerequisites
 
-- **Option 1 (Recommended): Devbox** - Reproducible dev environment
-  - Install [Devbox](https://www.jetify.com/devbox/docs/installing_devbox/)
+- **Option 1 (Recommended): Nix/Devbox** - Reproducible environment
+  - Install [Nix](https://nixos.org/download.html) or [Devbox](https://www.jetify.com/devbox/docs/installing_devbox/)
   - All dependencies managed automatically!
 - **Option 2: Manual Setup**
   - Rust 1.70+ ([Install Rust](https://rustup.rs/))
   - Cargo (included with Rust)
   - `bash` 4.0+ (for executing scripts)
 
-### Quick Start with Devbox (Recommended)
+### Quick Install with Nix Flakes
+
+```bash
+# Run directly (no installation needed!)
+nix run github:Luckystrike561/jarvis
+
+# Install to your profile
+nix profile install github:Luckystrike561/jarvis
+
+# Try it in a shell
+nix shell github:Luckystrike561/jarvis
+```
+
+### Quick Start with Devbox (Recommended for Development)
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/jarvis.git
+git clone https://github.com/Luckystrike561/jarvis.git
 cd jarvis
 
 # Start devbox shell (installs all dependencies automatically)
@@ -106,7 +119,7 @@ devbox run release
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/jarvis.git
+git clone https://github.com/Luckystrike561/jarvis.git
 cd jarvis
 
 # Build the optimized binary
@@ -125,6 +138,9 @@ mkdir -p scripts
 ### System-Wide Installation
 
 ```bash
+# With Nix (recommended)
+nix profile install github:Luckystrike561/jarvis
+
 # With devbox
 devbox run release
 sudo cp target/release/jarvis /usr/local/bin/

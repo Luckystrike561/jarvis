@@ -1,6 +1,5 @@
 # Rust/Cargo build artifacts
 /target/
-Cargo.lock
 
 # Debug and release builds
 debug/
@@ -25,8 +24,8 @@ release/
 *.profraw
 *.profdata
 
-# Cargo.lock (uncomment if you want to include it for binaries)
-# Cargo.lock
+# Keep Cargo.lock for binary projects (needed for Nix)
+# Cargo.lock is tracked
 
 # Devbox
 .devbox/
