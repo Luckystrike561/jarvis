@@ -1,0 +1,153 @@
+# Rust/Cargo build artifacts
+/target/
+Cargo.lock
+
+# Debug and release builds
+debug/
+release/
+**/target/
+
+# Rust incremental compilation
+**/*.rs.bk
+*.pdb
+
+# Generated documentation
+/doc/
+
+# Cargo build output
+**/*.rmeta
+**/*.rlib
+**/*.so
+**/*.dylib
+**/*.dll
+
+# Profiling data
+*.profraw
+*.profdata
+
+# Cargo.lock (uncomment if you want to include it for binaries)
+# Cargo.lock
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.iml
+
+# JetBrains IDEs
+.idea/
+*.iws
+*.ipr
+*.iml
+.idea_modules/
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Vim
+[._]*.s[a-v][a-z]
+[._]*.sw[a-p]
+[._]s[a-rt-v][a-z]
+[._]ss[a-gi-z]
+[._]sw[a-p]
+
+# Emacs
+\#*\#
+.\#*
+*~
+.*.swp
+
+# MacOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Environment files
+.env
+.env.local
+.env.*.local
+*.env
+
+# Log files
+*.log
+logs/
+*.log.*
+
+# Test coverage
+tarpaulin-report.html
+cobertura.xml
+lcov.info
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# Package manager
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Local scripts and configs (if any)
+local/
+.local/
+
+# SSH keys and secrets
+*.pem
+*.key
+*.crt
+id_rsa*
+id_ed25519*
+
+# Kubernetes configs (be careful with these)
+kubeconfig*
+*.kubeconfig
+
+# Docker
+.dockerignore
+
+# Custom local overrides
+local.sh
+local_*.sh

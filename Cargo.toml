@@ -1,0 +1,19 @@
+[package]
+name = "jarvis-tui"
+version = "0.1.0"
+edition = "2021"
+authors = ["Shield Project"]
+description = "A beautiful TUI for managing and executing bash scripts with zero configuration"
+
+[[bin]]
+name = "jarvis"
+path = "src/main.rs"
+
+[dependencies]
+ratatui = "0.28"
+crossterm = "0.28"
+tokio = { version = "1", features = ["full"] }
+anyhow = "1"
+regex = "1"
+walkdir = "2"
+
