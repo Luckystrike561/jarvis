@@ -60,6 +60,57 @@ impl App {
         self.expanded_categories.contains(&category.to_string())
     }
 
+    pub fn expand_category(&mut self, category: &str) {
+        if !self.is_category_expanded(category) {
+            self.expanded_categories.push(category.to_string());
+        }
+    }
+
+    pub fn collapse_category(&mut self, category: &str) {
+        if let Some(pos) = self.expanded_categories.iter().position(|c| c == category) {
+            self.expanded_categories.remove(pos);
+        }
+    }
+
+    // Handle left arrow: collapse category or move to parent category
+    pub fn handle_left(&mut self) {
+        if let Some(item) = self.selected_item() {
+            match item {
+                TreeItem::Category(category) => {
+                    // Collapse if expanded
+                    if self.is_category_expanded(&category) {
+                        self.collapse_category(&category);
+                    }
+                }
+                TreeItem::Function(func) => {
+                    // Move to parent category
+                    let items = self.tree_items();
+                    // Find the category that contains this function
+                    for (i, tree_item) in items.iter().enumerate() {
+                        if let TreeItem::Category(cat) = tree_item {
+                            if cat == &func.category && i < self.selected_index {
+                                self.selected_index = i;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Handle right arrow: expand category or do nothing on function
+    pub fn handle_right(&mut self) {
+        if let Some(item) = self.selected_item() {
+            if let TreeItem::Category(category) = item {
+                // Expand if collapsed
+                if !self.is_category_expanded(&category) {
+                    self.expand_category(&category);
+                }
+            }
+        }
+    }
+
     // Get all items in tree view (categories and their functions)
     pub fn tree_items(&self) -> Vec<TreeItem> {
         let mut items = Vec::new();

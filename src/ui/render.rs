@@ -232,7 +232,7 @@ fn render_output(frame: &mut Frame, app: &App, area: Rect) {
 fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
     let help_text = match app.focus {
         FocusPane::ScriptList => {
-            "[↑↓] Navigate  [Enter] Expand/Execute  [Tab] Switch Pane  [Q] Quit"
+            "[↑↓/jk] Navigate  [←→/hl] Collapse/Expand  [Enter] Toggle/Execute  [Tab] Switch  [Q] Quit"
         }
         FocusPane::Details => "[Tab] Switch Pane  [Q] Quit",
     };

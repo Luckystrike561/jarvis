@@ -136,6 +136,12 @@ async fn run_app(
                 KeyCode::Up | KeyCode::Char('k') => {
                     app.previous();
                 }
+                KeyCode::Left | KeyCode::Char('h') => {
+                    app.handle_left();
+                }
+                KeyCode::Right | KeyCode::Char('l') => {
+                    app.handle_right();
+                }
                 KeyCode::Enter => {
                     // Handle Enter based on selected item
                     if let Some(item) = app.selected_item() {
