@@ -16,47 +16,47 @@ async fn main() -> Result<()> {
     // Get the scripts directory
     let current_dir = std::env::current_dir()?;
     let scripts_dir = current_dir.join("scripts");
-    
+
     if !scripts_dir.exists() {
         eprintln!("Error: scripts directory not found at {:?}", scripts_dir);
         eprintln!("Please run from the jarvis directory");
         std::process::exit(1);
     }
-    
+
     // Discover scripts
     let script_files = script::discover_scripts(&scripts_dir)?;
-    
+
     if script_files.is_empty() {
         eprintln!("Error: No bash scripts found in {:?}", scripts_dir);
         std::process::exit(1);
     }
-    
+
     // Parse all scripts
     let mut all_functions = Vec::new();
     for script_file in &script_files {
         let functions = script::parse_script(&script_file.path, &script_file.category)?;
         all_functions.extend(functions);
     }
-    
+
     if all_functions.is_empty() {
         eprintln!("Warning: No functions found in scripts");
         eprintln!("Make sure your scripts have function arrays like:");
         eprintln!(r#"  fedora_functions=("Display Name:function_name" ...)"#);
     }
-    
+
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
-    
+
     // Create app
     let mut app = App::new(all_functions);
-    
+
     // Run the app
     let res = run_app(&mut terminal, &mut app, &script_files).await;
-    
+
     // Restore terminal
     disable_raw_mode()?;
     execute!(
@@ -65,11 +65,11 @@ async fn main() -> Result<()> {
         DisableMouseCapture
     )?;
     terminal.show_cursor()?;
-    
+
     if let Err(err) = res {
         eprintln!("Error: {:?}", err);
     }
-    
+
     Ok(())
 }
 
@@ -105,7 +105,7 @@ async fn run_app(
 ) -> Result<()> {
     loop {
         terminal.draw(|f| ui::render(f, app))?;
-        
+
         if let Event::Key(key) = event::read()? {
             match app.state {
                 AppState::MainMenu => match key.code {
@@ -144,25 +144,34 @@ async fn run_app(
                     KeyCode::Enter => {
                         // Execute function - clone data first to avoid borrow issues
                         let function_info = if let Some(func) = app.selected_function() {
-                            Some((func.name.clone(), func.category.clone(), func.display_name.clone()))
+                            Some((
+                                func.name.clone(),
+                                func.category.clone(),
+                                func.display_name.clone(),
+                            ))
                         } else {
                             None
                         };
-                        
+
                         if let Some((func_name, category, display_name)) = function_info {
                             // Find the script file
-                            if let Some(script_file) = script_files.iter().find(|s| s.category == category) {
+                            if let Some(script_file) =
+                                script_files.iter().find(|s| s.category == category)
+                            {
                                 // Suspend TUI for interactive execution
                                 suspend_tui(terminal)?;
-                                
+
                                 // Clear screen and show execution message
                                 println!("\n╔════════════════════════════════════════╗");
                                 println!("║  Executing: {:<27}║", display_name);
                                 println!("╚════════════════════════════════════════╝\n");
-                                
+
                                 // Execute the function with full terminal access
-                                let exit_code = script::execute_function_interactive(&script_file.path, &func_name)?;
-                                
+                                let exit_code = script::execute_function_interactive(
+                                    &script_file.path,
+                                    &func_name,
+                                )?;
+
                                 // Show completion status
                                 println!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
                                 if exit_code == 0 {
@@ -172,22 +181,26 @@ async fn run_app(
                                 }
                                 println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
                                 println!("\nPress Enter to return to JARVIS...");
-                                
+
                                 // Wait for user to press Enter
                                 let mut input = String::new();
                                 std::io::stdin().read_line(&mut input)?;
-                                
+
                                 // Store execution result in app output
                                 app.output.clear();
                                 app.output.push(format!("Function: {}", display_name));
                                 app.output.push(format!("Category: {}", category));
                                 app.output.push("".to_string());
                                 if exit_code == 0 {
-                                    app.output.push("Status: ✅ Completed successfully!".to_string());
+                                    app.output
+                                        .push("Status: ✅ Completed successfully!".to_string());
                                 } else {
-                                    app.output.push(format!("Status: ❌ Failed with exit code: {}", exit_code));
+                                    app.output.push(format!(
+                                        "Status: ❌ Failed with exit code: {}",
+                                        exit_code
+                                    ));
                                 }
-                                
+
                                 // Resume TUI
                                 resume_tui(terminal)?;
                             }
@@ -196,7 +209,11 @@ async fn run_app(
                     _ => {}
                 },
                 AppState::ViewingOutput => match key.code {
-                    KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Backspace | KeyCode::Esc | KeyCode::Enter => {
+                    KeyCode::Char('q')
+                    | KeyCode::Char('Q')
+                    | KeyCode::Backspace
+                    | KeyCode::Esc
+                    | KeyCode::Enter => {
                         // Go back to category view
                         app.state = AppState::CategoryView;
                         app.output.clear();
@@ -208,11 +225,11 @@ async fn run_app(
                 }
             }
         }
-        
+
         if app.should_quit {
             break;
         }
     }
-    
+
     Ok(())
 }

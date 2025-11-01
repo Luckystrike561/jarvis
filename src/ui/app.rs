@@ -28,24 +28,24 @@ impl App {
             should_quit: false,
         }
     }
-    
+
     pub fn next(&mut self) {
         let item_count = match self.state {
             AppState::MainMenu => self.categories().len(),
             _ => self.filtered_functions().len(),
         };
-        
+
         if item_count > 0 {
             self.selected_index = (self.selected_index + 1) % item_count;
         }
     }
-    
+
     pub fn previous(&mut self) {
         let item_count = match self.state {
             AppState::MainMenu => self.categories().len(),
             _ => self.filtered_functions().len(),
         };
-        
+
         if item_count > 0 {
             if self.selected_index > 0 {
                 self.selected_index -= 1;
@@ -54,7 +54,7 @@ impl App {
             }
         }
     }
-    
+
     pub fn filtered_functions(&self) -> Vec<&ScriptFunction> {
         match &self.category_filter {
             Some(category) => self
@@ -65,7 +65,7 @@ impl App {
             None => self.functions.iter().collect(),
         }
     }
-    
+
     pub fn categories(&self) -> Vec<String> {
         let mut cats: Vec<String> = self
             .functions
@@ -77,7 +77,7 @@ impl App {
         cats.sort();
         cats
     }
-    
+
     pub fn selected_function(&self) -> Option<&ScriptFunction> {
         let items = self.filtered_functions();
         items.get(self.selected_index).copied()

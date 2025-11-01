@@ -6,7 +6,9 @@
     "bash@latest",
     "shellcheck@latest",
     "shfmt@latest",
-    "fzf@latest"
+    "fzf@latest",
+    "rustfmt@latest",
+    "clippy@latest"
   ],
   "shell": {
     "init_hook": [

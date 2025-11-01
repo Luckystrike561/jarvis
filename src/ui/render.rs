@@ -12,16 +12,16 @@ pub fn render(frame: &mut Frame, app: &App) {
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(35), Constraint::Percentage(65)])
         .split(frame.area());
-    
+
     render_sidebar(frame, app, chunks[0]);
-    
+
     // Split content area into details and output sections if there's output
     if !app.output.is_empty() {
         let content_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
             .split(chunks[1]);
-        
+
         render_content(frame, app, content_chunks[0]);
         render_output(frame, app, content_chunks[1]);
     } else {
@@ -77,12 +77,12 @@ fn render_sidebar(frame: &mut Frame, app: &App, area: Rect) {
                 .collect()
         }
     };
-    
+
     let title = match app.state {
         AppState::MainMenu => "╣ JARVIS - Categories ╠",
         _ => "╣ Functions ╠",
     };
-    
+
     let list = List::new(items)
         .block(
             Block::default()
@@ -91,7 +91,7 @@ fn render_sidebar(frame: &mut Frame, app: &App, area: Rect) {
                 .border_style(Style::default().fg(Color::Cyan)),
         )
         .style(Style::default().fg(Color::White));
-    
+
     frame.render_widget(list, area);
 }
 
@@ -105,23 +105,21 @@ fn render_content(frame: &mut Frame, app: &App, area: Rect) {
                     .iter()
                     .filter(|f| &f.category == category)
                     .count();
-                
+
                 let text = vec![
-                    Line::from(vec![
-                        Span::styled(
-                            category.clone(),
-                            Style::default()
-                                .fg(Color::Cyan)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                    ]),
+                    Line::from(vec![Span::styled(
+                        category.clone(),
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD),
+                    )]),
                     Line::from(""),
                     Line::from(format!("Available functions: {}", count)),
                     Line::from(""),
                     Line::from("Press Enter to view functions"),
                     Line::from("Press Q to quit"),
                 ];
-                
+
                 let paragraph = Paragraph::new(text)
                     .block(
                         Block::default()
@@ -130,21 +128,19 @@ fn render_content(frame: &mut Frame, app: &App, area: Rect) {
                             .border_style(Style::default().fg(Color::Green)),
                     )
                     .wrap(Wrap { trim: true });
-                
+
                 frame.render_widget(paragraph, area);
             }
         }
         AppState::CategoryView | AppState::Executing | AppState::ViewingOutput => {
             if let Some(func) = app.selected_function() {
                 let text = vec![
-                    Line::from(vec![
-                        Span::styled(
-                            func.display_name.clone(),
-                            Style::default()
-                                .fg(Color::Yellow)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                    ]),
+                    Line::from(vec![Span::styled(
+                        func.display_name.clone(),
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD),
+                    )]),
                     Line::from(""),
                     Line::from(vec![
                         Span::styled("Category: ", Style::default().fg(Color::Gray)),
@@ -161,7 +157,7 @@ fn render_content(frame: &mut Frame, app: &App, area: Rect) {
                     Line::from(""),
                     Line::from("[Enter] Execute  [Backspace] Back  [Q] Quit"),
                 ];
-                
+
                 let paragraph = Paragraph::new(text)
                     .block(
                         Block::default()
@@ -170,7 +166,7 @@ fn render_content(frame: &mut Frame, app: &App, area: Rect) {
                             .border_style(Style::default().fg(Color::Green)),
                     )
                     .wrap(Wrap { trim: true });
-                
+
                 frame.render_widget(paragraph, area);
             }
         }
@@ -183,7 +179,7 @@ fn render_output(frame: &mut Frame, app: &App, area: Rect) {
         .iter()
         .map(|line| Line::from(line.clone()))
         .collect();
-    
+
     let paragraph = Paragraph::new(text)
         .block(
             Block::default()
@@ -192,6 +188,6 @@ fn render_output(frame: &mut Frame, app: &App, area: Rect) {
                 .border_style(Style::default().fg(Color::Magenta)),
         )
         .wrap(Wrap { trim: true });
-    
+
     frame.render_widget(paragraph, area);
 }
