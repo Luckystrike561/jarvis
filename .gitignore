@@ -28,6 +28,11 @@ release/
 # Cargo.lock (uncomment if you want to include it for binaries)
 # Cargo.lock
 
+# Devbox
+.devbox/
+devbox.lock
+.direnv/
+
 # IDE and editor files
 .vscode/
 .idea/

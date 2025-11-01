@@ -14,6 +14,22 @@ Jarvis is a **beautiful TUI (Terminal User Interface) for managing bash scripts*
 
 ## Installation (30 seconds)
 
+### Option 1: Using Devbox (Recommended)
+
+```bash
+# 1. Clone the repo
+git clone https://github.com/yourusername/jarvis.git
+cd jarvis
+
+# 2. Start devbox shell (auto-installs dependencies)
+devbox shell
+
+# 3. Build and run!
+devbox run dev
+```
+
+### Option 2: Manual Installation
+
 ```bash
 # 1. Clone and build
 git clone https://github.com/yourusername/jarvis.git

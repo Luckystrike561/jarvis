@@ -68,11 +68,41 @@ Jarvis doesn't care what your scripts do - it just makes them easy to discover, 
 
 ### Prerequisites
 
-- Rust 1.70+ ([Install Rust](https://rustup.rs/))
-- Cargo (included with Rust)
-- `bash` 4.0+ (for executing scripts)
+- **Option 1 (Recommended): Devbox** - Reproducible dev environment
+  - Install [Devbox](https://www.jetify.com/devbox/docs/installing_devbox/)
+  - All dependencies managed automatically!
+- **Option 2: Manual Setup**
+  - Rust 1.70+ ([Install Rust](https://rustup.rs/))
+  - Cargo (included with Rust)
+  - `bash` 4.0+ (for executing scripts)
 
-### Quick Start
+### Quick Start with Devbox (Recommended)
+
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/jarvis.git
+cd jarvis
+
+# Start devbox shell (installs all dependencies automatically)
+devbox shell
+
+# Build and run
+devbox run dev
+
+# Or build release binary
+devbox run release
+```
+
+**Available Devbox Commands:**
+- `devbox run build` - Build the project
+- `devbox run dev` - Build and run Jarvis
+- `devbox run check` - Run clippy and format check
+- `devbox run fmt` - Format Rust and bash code
+- `devbox run lint` - Lint bash scripts with shellcheck
+- `devbox run test` - Run all tests
+- `devbox run release` - Build optimized release binary
+
+### Quick Start (Manual)
 
 ```bash
 # Clone the repository
@@ -95,7 +125,12 @@ mkdir -p scripts
 ### System-Wide Installation
 
 ```bash
-# Install to system PATH
+# With devbox
+devbox run release
+sudo cp target/release/jarvis /usr/local/bin/
+
+# Or manually
+cargo build --release
 sudo cp target/release/jarvis /usr/local/bin/
 
 # Run from anywhere (ensure you run from a directory with a scripts/ folder)

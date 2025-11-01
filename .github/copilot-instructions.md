@@ -4,6 +4,31 @@
 
 Jarvis is a **universal TUI (Terminal User Interface) for managing and executing bash scripts**. It's built with Rust and Ratatui, providing zero-configuration script discovery and execution.
 
+## Development Environment
+
+This project uses **Devbox** for reproducible development environments:
+
+```bash
+# Enter devbox shell (auto-installs dependencies)
+devbox shell
+
+# Available commands
+devbox run build    # Build the project
+devbox run dev      # Build and run
+devbox run check    # Run clippy and format check
+devbox run fmt      # Format code (Rust + bash)
+devbox run lint     # Lint bash scripts
+devbox run test     # Run tests
+devbox run release  # Build optimized binary
+```
+
+**Dependencies managed by Devbox:**
+- Rust toolchain (cargo, rustc)
+- Bash (for script execution)
+- shellcheck (bash linting)
+- shfmt (bash formatting)
+- fzf (for script features)
+
 ## Core Principles
 
 1. **Zero Configuration** - Auto-discover scripts, no config files needed
