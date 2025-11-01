@@ -23,6 +23,7 @@
       "echo '  devbox run lint     - Lint bash scripts with shellcheck'",
       "echo '  devbox run test     - Run all tests'",
       "echo '  devbox run release  - Build optimized release binary'",
+      "echo '  devbox run install  - Install Jarvis locally to ~/.local/bin'",
       "echo ''"
     ],
     "scripts": {
@@ -50,6 +51,15 @@
       "release": [
         "cargo build --release",
         "echo 'Binary available at: target/release/jarvis'"
+      ],
+      "install": [
+        "cargo build --release",
+        "mkdir -p ~/.local/bin",
+        "cp target/release/jarvis ~/.local/bin/",
+        "echo '✅ Jarvis installed to ~/.local/bin/jarvis'",
+        "echo ''",
+        "echo 'Make sure ~/.local/bin is in your PATH:'",
+        "echo '  export PATH=\"$HOME/.local/bin:$PATH\"'"
       ]
     }
   }

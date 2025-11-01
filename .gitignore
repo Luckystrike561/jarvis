@@ -156,3 +156,7 @@ kubeconfig*
 local.sh
 local_*.sh
 result
+
+# User-specific jarvis scripts directory (but keep README)
+jarvis/
+!jarvis/README.md

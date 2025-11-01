@@ -13,21 +13,36 @@ use ui::{App, AppState};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Get the scripts directory
+    // Get the scripts and jarvis directories
     let current_dir = std::env::current_dir()?;
     let scripts_dir = current_dir.join("scripts");
+    let jarvis_dir = current_dir.join("jarvis");
 
-    if !scripts_dir.exists() {
-        eprintln!("Error: scripts directory not found at {:?}", scripts_dir);
+    // Check if at least one directory exists
+    if !scripts_dir.exists() && !jarvis_dir.exists() {
+        eprintln!("Error: Neither 'scripts' nor 'jarvis' directory found");
+        eprintln!("Searched for:");
+        eprintln!("  - {:?}", scripts_dir);
+        eprintln!("  - {:?}", jarvis_dir);
         eprintln!("Please run from the jarvis directory");
         std::process::exit(1);
     }
 
-    // Discover scripts
-    let script_files = script::discover_scripts(&scripts_dir)?;
+    // Discover scripts from both directories
+    let mut script_files = Vec::new();
+    
+    if scripts_dir.exists() {
+        let mut files = script::discover_scripts(&scripts_dir)?;
+        script_files.append(&mut files);
+    }
+    
+    if jarvis_dir.exists() {
+        let mut files = script::discover_scripts(&jarvis_dir)?;
+        script_files.append(&mut files);
+    }
 
     if script_files.is_empty() {
-        eprintln!("Error: No bash scripts found in {:?}", scripts_dir);
+        eprintln!("Error: No bash scripts found in scripts or jarvis directories");
         std::process::exit(1);
     }
 

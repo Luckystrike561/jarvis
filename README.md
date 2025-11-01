@@ -42,14 +42,18 @@ Inspired by Tony Stark's legendary AI from Marvel, **Jarvis** is a powerful TUI 
 - **Smart search** to quickly find any function
 
 ### 🔍 **Auto-Discovery System**
-- Automatically scans and parses bash scripts in `scripts/` directory
+- Automatically scans and parses bash scripts in `scripts/` and `jarvis/` directories
 - Discovers function definitions without manual configuration
 - Organizes functions by category (System, Homelab, Utilities)
 - Dynamic menu generation on every launch
+- `jarvis/` directory for user-specific custom scripts (gitignored by default)
 
 ### 🎯 **Universal Script Management**
 
-Jarvis works with **any** bash scripts you provide! Simply place your `.sh` files in the `scripts/` directory and define function arrays.
+Jarvis works with **any** bash scripts you provide! Simply place your `.sh` files in the `scripts/` or `jarvis/` directory and define function arrays.
+
+- **`scripts/`** - Repository-tracked scripts (shared with team/community)
+- **`jarvis/`** - User-specific custom scripts (gitignored, for personal workflows)
 
 **Example Use Cases:**
 - 🖥️ **System Administration** - OS setup, package management, configuration
@@ -153,7 +157,7 @@ sudo cp target/release/jarvis /usr/local/bin/
 jarvis
 ```
 
-**Note:** Jarvis looks for a `scripts/` directory in your current working directory. Make sure to run it from a directory containing your scripts.
+**Note:** Jarvis looks for `scripts/` and/or `jarvis/` directories in your current working directory. At least one must exist to run Jarvis.
 
 ---
 
@@ -165,7 +169,7 @@ jarvis
 # From the jarvis directory
 ./target/release/jarvis
 
-# Or if installed system-wide (must be in a directory with scripts/)
+# Or if installed system-wide (must be in a directory with scripts/ and/or jarvis/)
 jarvis
 ```
 
@@ -178,7 +182,7 @@ jarvis
 
 ### Workflow
 
-1. **Launch Jarvis** - It auto-discovers all bash scripts in `scripts/`
+1. **Launch Jarvis** - It auto-discovers all bash scripts in `scripts/` and `jarvis/`
 2. **Select Category** - Choose from automatically detected categories
 3. **Select Function** - Pick the function you want to execute
 4. **Execute** - Jarvis exits TUI mode and runs your script with full terminal access
@@ -203,8 +207,10 @@ jarvis/
 │       ├── app.rs         # Application state and event handling
 │       ├── render.rs      # UI rendering logic
 │       └── mod.rs         # Module exports
-├── scripts/               # YOUR bash scripts go here
+├── scripts/               # Repository bash scripts (tracked in git)
 │   └── (add your .sh files)
+├── jarvis/                # User-specific custom scripts (gitignored)
+│   └── (your personal .sh files)
 ├── Cargo.toml            # Rust project dependencies
 ├── README.md             # This file
 └── LICENSE               # MIT License
@@ -227,10 +233,10 @@ Jarvis automatically discovers functions from your bash scripts using a simple c
 
 ### Step 1: Create a Script File
 
-Create a `.sh` file in the `scripts/` directory:
+Create a `.sh` file in either the `scripts/` directory (for tracked/shared scripts) or `jarvis/` directory (for personal scripts):
 
 ```bash
-# scripts/myproject.sh
+# scripts/myproject.sh  (or jarvis/myproject.sh for personal scripts)
 #!/usr/bin/env bash
 
 # Define a function array with format: "Display Name:function_name"
