@@ -155,3 +155,4 @@ kubeconfig*
 # Custom local overrides
 local.sh
 local_*.sh
+result
