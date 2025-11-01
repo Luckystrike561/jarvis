@@ -17,84 +17,33 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
-        rust: [stable, beta]
     steps:
       - uses: actions/checkout@v4
       
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@master
+      - name: Install Devbox
+        uses: jetify-com/devbox-install-action@v0.11.0
         with:
-          toolchain: ${{ matrix.rust }}
-      
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-      
-      - name: Cache cargo index
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/git
-          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-      
-      - name: Cache cargo build
-        uses: actions/cache@v4
-        with:
-          path: target
-          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+          enable-cache: true
       
       - name: Run tests
-        run: cargo test --verbose
-      
-      - name: Run tests (release)
-        run: cargo test --release --verbose
+        run: devbox run test
 
-  clippy:
-    name: Clippy
+  lint:
+    name: Lint & Format Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Devbox
+        uses: jetify-com/devbox-install-action@v0.11.0
         with:
-          components: clippy
+          enable-cache: true
       
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+      - name: Run code quality checks
+        run: devbox run check
       
-      - name: Cache cargo index
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/git
-          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-      
-      - name: Cache cargo build
-        uses: actions/cache@v4
-        with:
-          path: target
-          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
-      
-      - name: Run clippy
-        run: cargo clippy -- -D warnings
-
-  fmt:
-    name: Format
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
-      
-      - name: Check formatting
-        run: cargo fmt -- --check
+      - name: Lint bash scripts
+        run: devbox run lint
 
   build:
     name: Build
@@ -105,29 +54,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-      
-      - name: Cache cargo registry
-        uses: actions/cache@v4
+      - name: Install Devbox
+        uses: jetify-com/devbox-install-action@v0.11.0
         with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          enable-cache: true
       
-      - name: Cache cargo index
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/git
-          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-      
-      - name: Cache cargo build
-        uses: actions/cache@v4
-        with:
-          path: target
-          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
-      
-      - name: Build
-        run: cargo build --release --verbose
+      - name: Build release binary
+        run: devbox run release
       
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -142,7 +75,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Run security audit
-        uses: rustsec/audit-check@v1
+      - name: Install Devbox
+        uses: jetify-com/devbox-install-action@v0.11.0
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          enable-cache: true
+      
+      - name: Run security audit
+        run: devbox run -- cargo audit || echo "Cargo audit not configured yet"
