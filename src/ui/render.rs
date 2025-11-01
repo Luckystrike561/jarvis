@@ -250,18 +250,42 @@ fn render_details(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_output(frame: &mut Frame, app: &App, area: Rect) {
-    let text: Vec<Line> = app
-        .output
+    let border_color = if app.focus == FocusPane::Output {
+        Color::Cyan
+    } else {
+        Color::Gray
+    };
+
+    // Calculate visible lines based on area height (subtract 2 for borders)
+    let visible_height = area.height.saturating_sub(2) as usize;
+    
+    // Get the scrolled window of output lines
+    let total_lines = app.output.len();
+    let start_idx = app.output_scroll.min(total_lines.saturating_sub(1));
+    let end_idx = (start_idx + visible_height).min(total_lines);
+    
+    let visible_output: Vec<Line> = app.output[start_idx..end_idx]
         .iter()
         .map(|line| Line::from(line.clone()))
         .collect();
 
-    let paragraph = Paragraph::new(text)
+    // Create title with scroll position indicator
+    let title = if total_lines > visible_height {
+        format!(
+            "💬 Output [{}/{}]",
+            start_idx + 1,
+            total_lines
+        )
+    } else {
+        "💬 Output".to_string()
+    };
+
+    let paragraph = Paragraph::new(visible_output)
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("💬 Output")
-                .border_style(Style::default().fg(Color::Magenta)),
+                .title(title)
+                .border_style(Style::default().fg(border_color)),
         )
         .wrap(Wrap { trim: true });
 
@@ -277,6 +301,7 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
                 "[↑↓/jk] Navigate  [←→/hl] Collapse/Expand  [/] Search  [i] Info  [Enter] Toggle/Execute  [Tab] Switch  [Q] Quit"
             }
             FocusPane::Details => "[Tab] Switch Pane  [/] Search  [i] Info  [Q] Quit",
+            FocusPane::Output => "[↑↓/jk] Scroll  [Tab] Switch Pane  [i] Info  [Q] Quit",
         }
     };
 

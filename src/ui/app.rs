@@ -14,6 +14,7 @@ pub enum AppState {
 pub enum FocusPane {
     ScriptList,
     Details,
+    Output,
 }
 
 pub struct App {
@@ -22,6 +23,7 @@ pub struct App {
     pub selected_index: usize,
     pub category_filter: Option<String>,
     pub output: Vec<String>,
+    pub output_scroll: usize,
     pub should_quit: bool,
     pub focus: FocusPane,
     pub expanded_categories: Vec<String>,
@@ -38,6 +40,7 @@ impl App {
             selected_index: 0,
             category_filter: None,
             output: Vec::new(),
+            output_scroll: 0,
             should_quit: false,
             focus: FocusPane::ScriptList,
             expanded_categories: Vec::new(),
@@ -50,12 +53,35 @@ impl App {
     pub fn toggle_focus(&mut self) {
         self.focus = match self.focus {
             FocusPane::ScriptList => FocusPane::Details,
-            FocusPane::Details => FocusPane::ScriptList,
+            FocusPane::Details => {
+                if !self.output.is_empty() {
+                    FocusPane::Output
+                } else {
+                    FocusPane::ScriptList
+                }
+            }
+            FocusPane::Output => FocusPane::ScriptList,
         };
     }
 
     pub fn toggle_info(&mut self) {
         self.show_info = !self.show_info;
+    }
+
+    pub fn scroll_output_up(&mut self) {
+        if self.output_scroll > 0 {
+            self.output_scroll -= 1;
+        }
+    }
+
+    pub fn scroll_output_down(&mut self) {
+        if self.output_scroll < self.output.len().saturating_sub(1) {
+            self.output_scroll += 1;
+        }
+    }
+
+    pub fn reset_output_scroll(&mut self) {
+        self.output_scroll = 0;
     }
 
     pub fn toggle_category(&mut self, category: &str) {

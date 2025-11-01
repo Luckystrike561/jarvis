@@ -191,6 +191,7 @@ async fn run_app(
 
                                     // Store execution result in app output
                                     app.output.clear();
+                                    app.reset_output_scroll();
                                     app.output.push(format!("Function: {}", display_name));
                                     app.output.push(format!("Category: {}", category));
                                     app.output.push("".to_string());
@@ -231,16 +232,28 @@ async fn run_app(
                         app.toggle_focus();
                     }
                     KeyCode::Down | KeyCode::Char('j') => {
-                        app.next();
+                        if app.focus == ui::app::FocusPane::Output {
+                            app.scroll_output_down();
+                        } else {
+                            app.next();
+                        }
                     }
                     KeyCode::Up | KeyCode::Char('k') => {
-                        app.previous();
+                        if app.focus == ui::app::FocusPane::Output {
+                            app.scroll_output_up();
+                        } else {
+                            app.previous();
+                        }
                     }
                     KeyCode::Left | KeyCode::Char('h') => {
-                        app.handle_left();
+                        if app.focus == ui::app::FocusPane::ScriptList {
+                            app.handle_left();
+                        }
                     }
                     KeyCode::Right | KeyCode::Char('l') => {
-                        app.handle_right();
+                        if app.focus == ui::app::FocusPane::ScriptList {
+                            app.handle_right();
+                        }
                     }
                     KeyCode::Enter => {
                         // Handle Enter based on selected item
@@ -288,22 +301,23 @@ async fn run_app(
                                         let mut input = String::new();
                                         std::io::stdin().read_line(&mut input)?;
 
-                                        // Store execution result in app output
-                                        app.output.clear();
-                                        app.output.push(format!("Function: {}", display_name));
-                                        app.output.push(format!("Category: {}", category));
-                                        app.output.push("".to_string());
-                                        if exit_code == 0 {
-                                            app.output
-                                                .push("Status: ✅ Completed successfully!".to_string());
-                                        } else {
-                                            app.output.push(format!(
-                                                "Status: ❌ Failed with exit code: {}",
-                                                exit_code
-                                            ));
-                                        }
+                                    // Store execution result in app output
+                                    app.output.clear();
+                                    app.reset_output_scroll();
+                                    app.output.push(format!("Function: {}", display_name));
+                                    app.output.push(format!("Category: {}", category));
+                                    app.output.push("".to_string());
+                                    if exit_code == 0 {
+                                        app.output
+                                            .push("Status: ✅ Completed successfully!".to_string());
+                                    } else {
+                                        app.output.push(format!(
+                                            "Status: ❌ Failed with exit code: {}",
+                                            exit_code
+                                        ));
+                                    }
 
-                                        // Resume TUI
+                                    // Resume TUI
                                         resume_tui(terminal)?;
                                     }
                                 }

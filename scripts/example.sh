@@ -9,6 +9,7 @@ example_functions=(
 	"Hello World:hello_world"
 	"System Info:show_system_info"
 	"Interactive Demo:interactive_demo"
+	"Long Output Test:long_output_test"
 )
 
 # Implement your functions below
@@ -51,4 +52,20 @@ interactive_demo() {
 	echo "  - fzf for selections"
 	echo "  - dialog for UI elements"
 	echo "  - Any interactive CLI tool!"
+}
+
+long_output_test() {
+	echo "📜 Long Output Test"
+	echo "==================="
+	echo ""
+	echo "This function generates many lines of output to test scrolling."
+	echo ""
+	
+	for i in {1..50}; do
+		echo "Line $i: This is a test line to demonstrate scrolling in the output pane."
+		echo "        You can use j/k or arrow keys to scroll when the output pane is focused."
+	done
+	
+	echo ""
+	echo "✅ End of output. Try pressing Tab to focus the output pane and scroll!"
 }
