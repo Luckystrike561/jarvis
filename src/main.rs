@@ -9,7 +9,7 @@ use crossterm::{
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::io;
-use ui::{App, AppState};
+use ui::App;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -30,12 +30,12 @@ async fn main() -> Result<()> {
 
     // Discover scripts from both directories
     let mut script_files = Vec::new();
-    
+
     if scripts_dir.exists() {
         let mut files = script::discover_scripts(&scripts_dir)?;
         script_files.append(&mut files);
     }
-    
+
     if jarvis_dir.exists() {
         let mut files = script::discover_scripts(&jarvis_dir)?;
         script_files.append(&mut files);
@@ -122,122 +122,89 @@ async fn run_app(
         terminal.draw(|f| ui::render(f, app))?;
 
         if let Event::Key(key) = event::read()? {
-            match app.state {
-                AppState::MainMenu => match key.code {
-                    KeyCode::Char('q') | KeyCode::Char('Q') => {
-                        app.should_quit = true;
-                    }
-                    KeyCode::Down | KeyCode::Char('j') => app.next(),
-                    KeyCode::Up | KeyCode::Char('k') => app.previous(),
-                    KeyCode::Enter => {
-                        // Select category
-                        let categories = app.categories();
-                        if let Some(category) = categories.get(app.selected_index) {
-                            app.category_filter = Some(category.clone());
-                            app.state = AppState::CategoryView;
-                            app.selected_index = 0;
-                        }
-                    }
-                    _ => {}
-                },
-                AppState::CategoryView => match key.code {
-                    KeyCode::Char('q') | KeyCode::Char('Q') => {
-                        app.should_quit = true;
-                    }
-                    KeyCode::Down | KeyCode::Char('j') => {
-                        app.next();
-                    }
-                    KeyCode::Up | KeyCode::Char('k') => {
-                        app.previous();
-                    }
-                    KeyCode::Backspace | KeyCode::Esc => {
-                        // Go back to main menu
-                        app.category_filter = None;
-                        app.state = AppState::MainMenu;
-                        app.selected_index = 0;
-                    }
-                    KeyCode::Enter => {
-                        // Execute function - clone data first to avoid borrow issues
-                        let function_info = if let Some(func) = app.selected_function() {
-                            Some((
-                                func.name.clone(),
-                                func.category.clone(),
-                                func.display_name.clone(),
-                            ))
-                        } else {
-                            None
-                        };
+            // Global keybindings
+            match key.code {
+                KeyCode::Char('q') | KeyCode::Char('Q') => {
+                    app.should_quit = true;
+                }
+                KeyCode::Tab => {
+                    app.toggle_focus();
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    app.next();
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    app.previous();
+                }
+                KeyCode::Enter => {
+                    // Handle Enter based on selected item
+                    if let Some(item) = app.selected_item() {
+                        match item {
+                            ui::app::TreeItem::Category(category) => {
+                                // Toggle category expansion
+                                app.toggle_category(&category);
+                            }
+                            ui::app::TreeItem::Function(func) => {
+                                // Execute function - clone data first
+                                let func_name = func.name.clone();
+                                let category = func.category.clone();
+                                let display_name = func.display_name.clone();
 
-                        if let Some((func_name, category, display_name)) = function_info {
-                            // Find the script file
-                            if let Some(script_file) =
-                                script_files.iter().find(|s| s.category == category)
-                            {
-                                // Suspend TUI for interactive execution
-                                suspend_tui(terminal)?;
+                                // Find the script file
+                                if let Some(script_file) =
+                                    script_files.iter().find(|s| s.category == category)
+                                {
+                                    // Suspend TUI for interactive execution
+                                    suspend_tui(terminal)?;
 
-                                // Clear screen and show execution message
-                                println!("\n╔════════════════════════════════════════╗");
-                                println!("║  Executing: {:<27}║", display_name);
-                                println!("╚════════════════════════════════════════╝\n");
+                                    // Clear screen and show execution message
+                                    println!("\n╔════════════════════════════════════════╗");
+                                    println!("║  Executing: {:<27}║", display_name);
+                                    println!("╚════════════════════════════════════════╝\n");
 
-                                // Execute the function with full terminal access
-                                let exit_code = script::execute_function_interactive(
-                                    &script_file.path,
-                                    &func_name,
-                                )?;
+                                    // Execute the function with full terminal access
+                                    let exit_code = script::execute_function_interactive(
+                                        &script_file.path,
+                                        &func_name,
+                                    )?;
 
-                                // Show completion status
-                                println!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-                                if exit_code == 0 {
-                                    println!("✅ Completed successfully!");
-                                } else {
-                                    println!("❌ Failed with exit code: {}", exit_code);
+                                    // Show completion status
+                                    println!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                                    if exit_code == 0 {
+                                        println!("✅ Completed successfully!");
+                                    } else {
+                                        println!("❌ Failed with exit code: {}", exit_code);
+                                    }
+                                    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                                    println!("\nPress Enter to return to JARVIS...");
+
+                                    // Wait for user to press Enter
+                                    let mut input = String::new();
+                                    std::io::stdin().read_line(&mut input)?;
+
+                                    // Store execution result in app output
+                                    app.output.clear();
+                                    app.output.push(format!("Function: {}", display_name));
+                                    app.output.push(format!("Category: {}", category));
+                                    app.output.push("".to_string());
+                                    if exit_code == 0 {
+                                        app.output
+                                            .push("Status: ✅ Completed successfully!".to_string());
+                                    } else {
+                                        app.output.push(format!(
+                                            "Status: ❌ Failed with exit code: {}",
+                                            exit_code
+                                        ));
+                                    }
+
+                                    // Resume TUI
+                                    resume_tui(terminal)?;
                                 }
-                                println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-                                println!("\nPress Enter to return to JARVIS...");
-
-                                // Wait for user to press Enter
-                                let mut input = String::new();
-                                std::io::stdin().read_line(&mut input)?;
-
-                                // Store execution result in app output
-                                app.output.clear();
-                                app.output.push(format!("Function: {}", display_name));
-                                app.output.push(format!("Category: {}", category));
-                                app.output.push("".to_string());
-                                if exit_code == 0 {
-                                    app.output
-                                        .push("Status: ✅ Completed successfully!".to_string());
-                                } else {
-                                    app.output.push(format!(
-                                        "Status: ❌ Failed with exit code: {}",
-                                        exit_code
-                                    ));
-                                }
-
-                                // Resume TUI
-                                resume_tui(terminal)?;
                             }
                         }
                     }
-                    _ => {}
-                },
-                AppState::ViewingOutput => match key.code {
-                    KeyCode::Char('q')
-                    | KeyCode::Char('Q')
-                    | KeyCode::Backspace
-                    | KeyCode::Esc
-                    | KeyCode::Enter => {
-                        // Go back to category view
-                        app.state = AppState::CategoryView;
-                        app.output.clear();
-                    }
-                    _ => {}
-                },
-                AppState::Executing => {
-                    // Don't allow input while executing
                 }
+                _ => {}
             }
         }
 

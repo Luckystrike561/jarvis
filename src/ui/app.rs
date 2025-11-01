@@ -4,8 +4,16 @@ use crate::script::ScriptFunction;
 pub enum AppState {
     MainMenu,
     CategoryView,
+    #[allow(dead_code)]
     Executing,
+    #[allow(dead_code)]
     ViewingOutput,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum FocusPane {
+    ScriptList,
+    Details,
 }
 
 pub struct App {
@@ -15,6 +23,8 @@ pub struct App {
     pub category_filter: Option<String>,
     pub output: Vec<String>,
     pub should_quit: bool,
+    pub focus: FocusPane,
+    pub expanded_categories: Vec<String>,
 }
 
 impl App {
@@ -26,14 +36,61 @@ impl App {
             category_filter: None,
             output: Vec::new(),
             should_quit: false,
+            focus: FocusPane::ScriptList,
+            expanded_categories: Vec::new(),
         }
     }
 
-    pub fn next(&mut self) {
-        let item_count = match self.state {
-            AppState::MainMenu => self.categories().len(),
-            _ => self.filtered_functions().len(),
+    pub fn toggle_focus(&mut self) {
+        self.focus = match self.focus {
+            FocusPane::ScriptList => FocusPane::Details,
+            FocusPane::Details => FocusPane::ScriptList,
         };
+    }
+
+    pub fn toggle_category(&mut self, category: &str) {
+        if let Some(pos) = self.expanded_categories.iter().position(|c| c == category) {
+            self.expanded_categories.remove(pos);
+        } else {
+            self.expanded_categories.push(category.to_string());
+        }
+    }
+
+    pub fn is_category_expanded(&self, category: &str) -> bool {
+        self.expanded_categories.contains(&category.to_string())
+    }
+
+    // Get all items in tree view (categories and their functions)
+    pub fn tree_items(&self) -> Vec<TreeItem> {
+        let mut items = Vec::new();
+        let categories = self.categories();
+
+        for category in categories {
+            items.push(TreeItem::Category(category.clone()));
+
+            if self.is_category_expanded(&category) {
+                let funcs: Vec<&ScriptFunction> = self
+                    .functions
+                    .iter()
+                    .filter(|f| f.category == category)
+                    .collect();
+
+                for func in funcs {
+                    items.push(TreeItem::Function(func.clone()));
+                }
+            }
+        }
+
+        items
+    }
+
+    pub fn selected_item(&self) -> Option<TreeItem> {
+        let items = self.tree_items();
+        items.get(self.selected_index).cloned()
+    }
+
+    pub fn next(&mut self) {
+        let item_count = self.tree_items().len();
 
         if item_count > 0 {
             self.selected_index = (self.selected_index + 1) % item_count;
@@ -41,10 +98,7 @@ impl App {
     }
 
     pub fn previous(&mut self) {
-        let item_count = match self.state {
-            AppState::MainMenu => self.categories().len(),
-            _ => self.filtered_functions().len(),
-        };
+        let item_count = self.tree_items().len();
 
         if item_count > 0 {
             if self.selected_index > 0 {
@@ -79,7 +133,17 @@ impl App {
     }
 
     pub fn selected_function(&self) -> Option<&ScriptFunction> {
-        let items = self.filtered_functions();
-        items.get(self.selected_index).copied()
+        if let Some(TreeItem::Function(func)) = self.selected_item() {
+            // Find the function in our list by name
+            self.functions.iter().find(|f| f.name == func.name)
+        } else {
+            None
+        }
     }
+}
+
+#[derive(Debug, Clone)]
+pub enum TreeItem {
+    Category(String),
+    Function(ScriptFunction),
 }

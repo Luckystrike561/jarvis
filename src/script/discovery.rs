@@ -5,6 +5,7 @@ use walkdir::WalkDir;
 #[derive(Debug, Clone)]
 pub struct ScriptFile {
     pub path: PathBuf,
+    #[allow(dead_code)]
     pub name: String,
     pub category: String,
 }
