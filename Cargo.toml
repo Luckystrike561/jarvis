@@ -2,8 +2,8 @@
 name = "jarvis-tui"
 version = "0.1.0"
 edition = "2021"
-authors = ["Shield Project"]
-description = "A beautiful TUI for managing and executing bash scripts with zero configuration"
+authors = ["Luckystrike561"]
+description = "A beautiful TUI for managing and executing scripts with zero configuration"
 
 [[bin]]
 name = "jarvis"
@@ -16,4 +16,3 @@ tokio = { version = "1", features = ["full"] }
 anyhow = "1"
 regex = "1"
 walkdir = "2"
-
