@@ -1,7 +1,7 @@
 mod script;
 mod ui;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
@@ -9,107 +9,182 @@ use crossterm::{
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::io;
+use std::panic;
 use ui::App;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Set up panic hook to ensure terminal is restored on panic
+    let original_hook = panic::take_hook();
+    panic::set_hook(Box::new(move |panic_info| {
+        // Try to restore terminal state
+        let _ = disable_raw_mode();
+        let _ = execute!(
+            io::stdout(),
+            LeaveAlternateScreen,
+            DisableMouseCapture
+        );
+        
+        // Call the original panic hook
+        original_hook(panic_info);
+    }));
+
+    // Run the application and ensure cleanup happens
+    let result = run_application().await;
+
+    // Restore panic hook
+    let _ = panic::take_hook();
+
+    result
+}
+
+async fn run_application() -> Result<()> {
     // Get the scripts and jarvis directories
-    let current_dir = std::env::current_dir()?;
+    let current_dir = std::env::current_dir()
+        .context("Failed to get current working directory")?;
     let scripts_dir = current_dir.join("scripts");
     let jarvis_dir = current_dir.join("jarvis");
 
     // Check if at least one directory exists
     if !scripts_dir.exists() && !jarvis_dir.exists() {
-        eprintln!("Error: Neither 'scripts' nor 'jarvis' directory found");
-        eprintln!("Searched for:");
-        eprintln!("  - {:?}", scripts_dir);
-        eprintln!("  - {:?}", jarvis_dir);
-        eprintln!("Please run from the jarvis directory");
-        std::process::exit(1);
+        anyhow::bail!(
+            "Neither 'scripts' nor 'jarvis' directory found.\n\
+             Searched in: {}\n\
+             Please run from a directory containing at least one of these folders.",
+            current_dir.display()
+        );
     }
 
     // Discover scripts from both directories
     let mut script_files = Vec::new();
 
     if scripts_dir.exists() {
-        let mut files = script::discover_scripts(&scripts_dir)?;
-        script_files.append(&mut files);
+        let files = script::discover_scripts(&scripts_dir)
+            .with_context(|| format!("Failed to discover scripts in: {}", scripts_dir.display()))?;
+        script_files.extend(files);
     }
 
     if jarvis_dir.exists() {
-        let mut files = script::discover_scripts(&jarvis_dir)?;
-        script_files.append(&mut files);
+        let files = script::discover_scripts(&jarvis_dir)
+            .with_context(|| format!("Failed to discover scripts in: {}", jarvis_dir.display()))?;
+        script_files.extend(files);
     }
 
     if script_files.is_empty() {
-        eprintln!("Error: No bash scripts found in scripts or jarvis directories");
+        eprintln!("Warning: No bash scripts (.sh files) found in scripts or jarvis directories");
+        eprintln!("Please add bash scripts with function arrays to get started.");
+        eprintln!("\nExample script format:");
+        eprintln!(r#"  example_functions=("Display Name:function_name" ...)"#);
         std::process::exit(1);
     }
 
     // Parse all scripts
     let mut all_functions = Vec::new();
+    let mut parse_errors = Vec::new();
+
     for script_file in &script_files {
-        let functions = script::parse_script(&script_file.path, &script_file.category)?;
-        all_functions.extend(functions);
+        match script::parse_script(&script_file.path, &script_file.category) {
+            Ok(functions) => {
+                all_functions.extend(functions);
+            }
+            Err(e) => {
+                parse_errors.push((script_file.path.display().to_string(), e));
+            }
+        }
+    }
+
+    // Report any parse errors
+    if !parse_errors.is_empty() {
+        eprintln!("\nWarning: Failed to parse some scripts:");
+        for (path, err) in &parse_errors {
+            eprintln!("  - {}: {}", path, err);
+        }
+        eprintln!();
     }
 
     if all_functions.is_empty() {
-        eprintln!("Warning: No functions found in scripts");
-        eprintln!("Make sure your scripts have function arrays like:");
-        eprintln!(r#"  fedora_functions=("Display Name:function_name" ...)"#);
+        eprintln!("Error: No functions found in any scripts");
+        eprintln!("\nMake sure your scripts have function arrays like:");
+        eprintln!(r#"  script_functions=("Display Name:function_name" ...)"#);
+        eprintln!("\nAnd implement the corresponding functions in the script.");
+        std::process::exit(1);
     }
 
     // Setup terminal
-    enable_raw_mode()?;
+    enable_raw_mode()
+        .context("Failed to enable raw mode for terminal")?;
+    
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)
+        .context("Failed to setup terminal")?;
+    
     let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    let mut terminal = Terminal::new(backend)
+        .context("Failed to create terminal")?;
 
     // Create app
     let mut app = App::new(all_functions);
 
-    // Run the app
-    let res = run_app(&mut terminal, &mut app, &script_files).await;
+    // Run the app and ensure cleanup happens even on error
+    let run_result = run_app(&mut terminal, &mut app, &script_files).await;
 
-    // Restore terminal
-    disable_raw_mode()?;
+    // Restore terminal (always runs, even if run_app failed)
+    let cleanup_result = cleanup_terminal(&mut terminal);
+
+    // Return the first error that occurred, or Ok if both succeeded
+    run_result?;
+    cleanup_result?;
+
+    Ok(())
+}
+
+/// Clean up terminal state
+fn cleanup_terminal(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
+    disable_raw_mode()
+        .context("Failed to disable raw mode")?;
+    
     execute!(
         terminal.backend_mut(),
         LeaveAlternateScreen,
         DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
-
-    if let Err(err) = res {
-        eprintln!("Error: {:?}", err);
-    }
-
+    )
+    .context("Failed to restore terminal")?;
+    
+    terminal.show_cursor()
+        .context("Failed to show cursor")?;
+    
     Ok(())
 }
 
 /// Suspend the TUI and restore terminal for interactive command execution
 fn suspend_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
-    disable_raw_mode()?;
+    disable_raw_mode()
+        .context("Failed to disable raw mode when suspending TUI")?;
     execute!(
         terminal.backend_mut(),
         LeaveAlternateScreen,
         DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
+    )
+    .context("Failed to leave alternate screen when suspending TUI")?;
+    terminal.show_cursor()
+        .context("Failed to show cursor when suspending TUI")?;
     Ok(())
 }
 
 /// Resume the TUI after interactive command execution
 fn resume_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
-    enable_raw_mode()?;
+    enable_raw_mode()
+        .context("Failed to enable raw mode when resuming TUI")?;
     execute!(
         terminal.backend_mut(),
         EnterAlternateScreen,
         EnableMouseCapture
-    )?;
-    terminal.hide_cursor()?;
-    terminal.clear()?;
+    )
+    .context("Failed to enter alternate screen when resuming TUI")?;
+    terminal.hide_cursor()
+        .context("Failed to hide cursor when resuming TUI")?;
+    terminal.clear()
+        .context("Failed to clear terminal when resuming TUI")?;
     Ok(())
 }
 
@@ -119,9 +194,12 @@ async fn run_app(
     script_files: &[script::ScriptFile],
 ) -> Result<()> {
     loop {
-        terminal.draw(|f| ui::render(f, app))?;
+        terminal.draw(|f| ui::render(f, app))
+            .context("Failed to draw terminal UI")?;
 
-        if let Event::Key(key) = event::read()? {
+        if let Event::Key(key) = event::read()
+            .context("Failed to read keyboard event")? 
+        {
             // Handle info modal close first
             if app.show_info {
                 match key.code {
@@ -185,9 +263,11 @@ async fn run_app(
                                     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
                                     println!("\nPress Enter to return to JARVIS...");
 
-                                    // Wait for user to press Enter
-                                    let mut input = String::new();
-                                    std::io::stdin().read_line(&mut input)?;
+                                        // Wait for user to press Enter
+                                        let mut input = String::new();
+                                        if let Err(e) = std::io::stdin().read_line(&mut input) {
+                                            eprintln!("Warning: Failed to read input: {}", e);
+                                        }
 
                                     // Store execution result in app output
                                     app.output.clear();
@@ -299,7 +379,9 @@ async fn run_app(
 
                                         // Wait for user to press Enter
                                         let mut input = String::new();
-                                        std::io::stdin().read_line(&mut input)?;
+                                        if let Err(e) = std::io::stdin().read_line(&mut input) {
+                                            eprintln!("Warning: Failed to read input: {}", e);
+                                        }
 
                                     // Store execution result in app output
                                     app.output.clear();
