@@ -1,12 +1,11 @@
 use crate::script::ScriptFunction;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(dead_code)]
 pub enum AppState {
     MainMenu,
     CategoryView,
-    #[allow(dead_code)]
     Executing,
-    #[allow(dead_code)]
     ViewingOutput,
 }
 
@@ -18,9 +17,11 @@ pub enum FocusPane {
 }
 
 pub struct App {
+    #[allow(dead_code)]
     pub state: AppState,
     pub functions: Vec<ScriptFunction>,
     pub selected_index: usize,
+    #[allow(dead_code)]
     pub category_filter: Option<String>,
     pub output: Vec<String>,
     pub output_scroll: usize,
@@ -137,12 +138,10 @@ impl App {
 
     // Handle right arrow: expand category or do nothing on function
     pub fn handle_right(&mut self) {
-        if let Some(item) = self.selected_item() {
-            if let TreeItem::Category(category) = item {
-                // Expand if collapsed
-                if !self.is_category_expanded(&category) {
-                    self.expand_category(&category);
-                }
+        if let Some(TreeItem::Category(category)) = self.selected_item() {
+            // Expand if collapsed
+            if !self.is_category_expanded(&category) {
+                self.expand_category(&category);
             }
         }
     }
@@ -236,6 +235,7 @@ impl App {
         }
     }
 
+    #[allow(dead_code)]
     pub fn filtered_functions(&self) -> Vec<&ScriptFunction> {
         match &self.category_filter {
             Some(category) => self
@@ -259,6 +259,7 @@ impl App {
         cats
     }
 
+    #[allow(dead_code)]
     pub fn selected_function(&self) -> Option<&ScriptFunction> {
         if let Some(TreeItem::Function(func)) = self.selected_item() {
             // Find the function in our list by name

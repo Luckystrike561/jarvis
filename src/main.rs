@@ -228,66 +228,64 @@ async fn run_app(
                     }
                     KeyCode::Enter => {
                         // Execute function if one is selected
-                        if let Some(item) = app.selected_item() {
-                            if let ui::app::TreeItem::Function(func) = item {
-                                // Execute function - clone data first
-                                let func_name = func.name.clone();
-                                let category = func.category.clone();
-                                let display_name = func.display_name.clone();
+                        if let Some(ui::app::TreeItem::Function(func)) = app.selected_item() {
+                            // Execute function - clone data first
+                            let func_name = func.name.clone();
+                            let category = func.category.clone();
+                            let display_name = func.display_name.clone();
 
-                                // Find the script file
-                                if let Some(script_file) =
-                                    script_files.iter().find(|s| s.category == category)
-                                {
-                                    // Suspend TUI for interactive execution
-                                    suspend_tui(terminal)?;
+                            // Find the script file
+                            if let Some(script_file) =
+                                script_files.iter().find(|s| s.category == category)
+                            {
+                                // Suspend TUI for interactive execution
+                                suspend_tui(terminal)?;
 
-                                    // Clear screen and show execution message
-                                    println!("\n╔════════════════════════════════════════╗");
-                                    println!("║  Executing: {:<27}║", display_name);
-                                    println!("╚════════════════════════════════════════╝\n");
+                                // Clear screen and show execution message
+                                println!("\n╔════════════════════════════════════════╗");
+                                println!("║  Executing: {:<27}║", display_name);
+                                println!("╚════════════════════════════════════════╝\n");
 
-                                    // Execute the function with full terminal access
-                                    let exit_code = script::execute_function_interactive(
-                                        &script_file.path,
-                                        &func_name,
-                                    )?;
+                                // Execute the function with full terminal access
+                                let exit_code = script::execute_function_interactive(
+                                    &script_file.path,
+                                    &func_name,
+                                )?;
 
-                                    // Show completion status
-                                    println!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-                                    if exit_code == 0 {
-                                        println!("✅ Completed successfully!");
-                                    } else {
-                                        println!("❌ Failed with exit code: {}", exit_code);
-                                    }
-                                    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-                                    println!("\nPress Enter to return to JARVIS...");
-
-                                        // Wait for user to press Enter
-                                        let mut input = String::new();
-                                        if let Err(e) = std::io::stdin().read_line(&mut input) {
-                                            eprintln!("Warning: Failed to read input: {}", e);
-                                        }
-
-                                    // Store execution result in app output
-                                    app.output.clear();
-                                    app.reset_output_scroll();
-                                    app.output.push(format!("Function: {}", display_name));
-                                    app.output.push(format!("Category: {}", category));
-                                    app.output.push("".to_string());
-                                    if exit_code == 0 {
-                                        app.output
-                                            .push("Status: ✅ Completed successfully!".to_string());
-                                    } else {
-                                        app.output.push(format!(
-                                            "Status: ❌ Failed with exit code: {}",
-                                            exit_code
-                                        ));
-                                    }
-
-                                    // Resume TUI
-                                    resume_tui(terminal)?;
+                                // Show completion status
+                                println!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                                if exit_code == 0 {
+                                    println!("✅ Completed successfully!");
+                                } else {
+                                    println!("❌ Failed with exit code: {}", exit_code);
                                 }
+                                println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                                println!("\nPress Enter to return to JARVIS...");
+
+                                    // Wait for user to press Enter
+                                    let mut input = String::new();
+                                    if let Err(e) = std::io::stdin().read_line(&mut input) {
+                                        eprintln!("Warning: Failed to read input: {}", e);
+                                    }
+
+                                // Store execution result in app output
+                                app.output.clear();
+                                app.reset_output_scroll();
+                                app.output.push(format!("Function: {}", display_name));
+                                app.output.push(format!("Category: {}", category));
+                                app.output.push("".to_string());
+                                if exit_code == 0 {
+                                    app.output
+                                        .push("Status: ✅ Completed successfully!".to_string());
+                                } else {
+                                    app.output.push(format!(
+                                        "Status: ❌ Failed with exit code: {}",
+                                        exit_code
+                                    ));
+                                }
+
+                                // Resume TUI
+                                resume_tui(terminal)?;
                             }
                         }
                     }
