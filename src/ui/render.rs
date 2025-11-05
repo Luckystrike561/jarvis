@@ -131,7 +131,9 @@ fn render_script_tree(frame: &mut Frame, app: &App, area: Rect) {
                     ListItem::new(content).style(style)
                 }
                 TreeItem::Function(func) => {
-                    let emoji_prefix = func.emoji.as_ref()
+                    let emoji_prefix = func
+                        .emoji
+                        .as_ref()
                         .map(|e| format!("{} ", e))
                         .unwrap_or_default();
                     let content = format!("    {}{}", emoji_prefix, func.display_name);
@@ -259,12 +261,12 @@ fn render_output(frame: &mut Frame, app: &App, area: Rect) {
 
     // Calculate visible lines based on area height (subtract 2 for borders)
     let visible_height = area.height.saturating_sub(2) as usize;
-    
+
     // Get the scrolled window of output lines
     let total_lines = app.output.len();
     let start_idx = app.output_scroll.min(total_lines.saturating_sub(1));
     let end_idx = (start_idx + visible_height).min(total_lines);
-    
+
     let visible_output: Vec<Line> = app.output[start_idx..end_idx]
         .iter()
         .map(|line| Line::from(line.clone()))
@@ -272,11 +274,7 @@ fn render_output(frame: &mut Frame, app: &App, area: Rect) {
 
     // Create title with scroll position indicator
     let title = if total_lines > visible_height {
-        format!(
-            "💬 Output [{}/{}]",
-            start_idx + 1,
-            total_lines
-        )
+        format!("💬 Output [{}/{}]", start_idx + 1, total_lines)
     } else {
         "💬 Output".to_string()
     };
@@ -362,7 +360,9 @@ fn render_info_modal(frame: &mut Frame, area: Rect) {
         Line::from(""),
         Line::from(vec![Span::styled(
             description,
-            Style::default().fg(Color::White).add_modifier(Modifier::ITALIC),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::ITALIC),
         )]),
         Line::from(""),
         Line::from(vec![Span::styled(

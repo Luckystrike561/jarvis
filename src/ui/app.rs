@@ -355,10 +355,10 @@ mod tests {
         let mut app = App::new(functions, "Test".to_string());
 
         assert!(!app.is_category_expanded("System"));
-        
+
         app.toggle_category("System");
         assert!(app.is_category_expanded("System"));
-        
+
         app.toggle_category("System");
         assert!(!app.is_category_expanded("System"));
     }
@@ -370,14 +370,14 @@ mod tests {
 
         app.expand_category("System");
         assert!(app.is_category_expanded("System"));
-        
+
         // Expanding again should not duplicate
         app.expand_category("System");
         assert_eq!(app.expanded_categories.len(), 1);
-        
+
         app.collapse_category("System");
         assert!(!app.is_category_expanded("System"));
-        
+
         // Collapsing again should be safe
         app.collapse_category("System");
         assert!(!app.is_category_expanded("System"));
@@ -389,16 +389,16 @@ mod tests {
         let mut app = App::new(functions, "Test".to_string());
 
         assert_eq!(app.selected_index, 0);
-        
+
         app.next();
         assert_eq!(app.selected_index, 1);
-        
+
         app.next();
         assert_eq!(app.selected_index, 0); // Wraps around
-        
+
         app.previous();
         assert_eq!(app.selected_index, 1); // Goes to last
-        
+
         app.previous();
         assert_eq!(app.selected_index, 0);
     }
@@ -409,10 +409,10 @@ mod tests {
         let mut app = App::new(functions, "Test".to_string());
 
         assert_eq!(app.focus, FocusPane::ScriptList);
-        
+
         app.toggle_focus();
         assert_eq!(app.focus, FocusPane::Details);
-        
+
         app.toggle_focus();
         assert_eq!(app.focus, FocusPane::ScriptList);
     }
@@ -421,18 +421,18 @@ mod tests {
     fn test_app_toggle_focus_with_output() {
         let functions = create_test_functions();
         let mut app = App::new(functions, "Test".to_string());
-        
+
         // Add some output
         app.output.push("Test output".to_string());
 
         assert_eq!(app.focus, FocusPane::ScriptList);
-        
+
         app.toggle_focus();
         assert_eq!(app.focus, FocusPane::Details);
-        
+
         app.toggle_focus();
         assert_eq!(app.focus, FocusPane::Output);
-        
+
         app.toggle_focus();
         assert_eq!(app.focus, FocusPane::ScriptList);
     }
@@ -444,20 +444,20 @@ mod tests {
 
         assert!(!app.search_mode);
         assert_eq!(app.search_query, "");
-        
+
         app.enter_search_mode();
         assert!(app.search_mode);
         assert_eq!(app.search_query, "");
-        
+
         app.search_push_char('t');
         app.search_push_char('e');
         app.search_push_char('s');
         app.search_push_char('t');
         assert_eq!(app.search_query, "test");
-        
+
         app.search_pop_char();
         assert_eq!(app.search_query, "tes");
-        
+
         app.exit_search_mode();
         assert!(!app.search_mode);
         assert_eq!(app.search_query, "");
@@ -474,23 +474,23 @@ mod tests {
         }
 
         assert_eq!(app.output_scroll, 0);
-        
+
         app.scroll_output_down();
         assert_eq!(app.output_scroll, 1);
-        
+
         app.scroll_output_down();
         assert_eq!(app.output_scroll, 2);
-        
+
         app.scroll_output_up();
         assert_eq!(app.output_scroll, 1);
-        
+
         app.scroll_output_up();
         assert_eq!(app.output_scroll, 0);
-        
+
         // Should not go below 0
         app.scroll_output_up();
         assert_eq!(app.output_scroll, 0);
-        
+
         app.reset_output_scroll();
         assert_eq!(app.output_scroll, 0);
     }
@@ -501,10 +501,10 @@ mod tests {
         let mut app = App::new(functions, "Test".to_string());
 
         assert!(!app.show_info);
-        
+
         app.toggle_info();
         assert!(app.show_info);
-        
+
         app.toggle_info();
         assert!(!app.show_info);
     }
@@ -517,7 +517,7 @@ mod tests {
         let items = app.tree_items();
         // Should only show categories when collapsed
         assert_eq!(items.len(), 2); // System and Utilities
-        
+
         match &items[0] {
             TreeItem::Category(name) => assert!(name == "System" || name == "Utilities"),
             _ => panic!("Expected category"),
@@ -530,7 +530,7 @@ mod tests {
         let mut app = App::new(functions, "Test".to_string());
 
         app.expand_category("System");
-        
+
         let items = app.tree_items();
         // Should show: System category + 2 functions + Utilities category
         assert_eq!(items.len(), 4);
@@ -543,9 +543,9 @@ mod tests {
 
         let item = app.selected_item();
         assert!(item.is_some());
-        
+
         match item.unwrap() {
-            TreeItem::Category(_) => {}, // Expected
+            TreeItem::Category(_) => {} // Expected
             _ => panic!("Expected category at index 0"),
         }
     }
@@ -557,14 +557,14 @@ mod tests {
 
         // Initially not expanded
         assert!(!app.is_category_expanded("System"));
-        
+
         // Simulate selecting first category (index 0)
         app.selected_index = 0;
-        
+
         // Right arrow should expand
         app.handle_right();
         assert!(app.is_category_expanded("System"));
-        
+
         // Left arrow should collapse
         app.handle_left();
         assert!(!app.is_category_expanded("System"));
@@ -593,7 +593,7 @@ mod tests {
 
         // Search should filter to only show items matching "func3"
         let items = app.tree_items();
-        
+
         // Should show Utilities category + func3
         assert_eq!(items.len(), 2);
     }

@@ -37,12 +37,8 @@ async fn main() -> Result<()> {
     panic::set_hook(Box::new(move |panic_info| {
         // Try to restore terminal state
         let _ = disable_raw_mode();
-        let _ = execute!(
-            io::stdout(),
-            LeaveAlternateScreen,
-            DisableMouseCapture
-        );
-        
+        let _ = execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture);
+
         // Call the original panic hook
         original_hook(panic_info);
     }));
@@ -62,8 +58,7 @@ async fn run_application(args: Args) -> Result<()> {
         path.canonicalize()
             .with_context(|| format!("Failed to access directory: {}", path.display()))?
     } else {
-        std::env::current_dir()
-            .context("Failed to get current working directory")?
+        std::env::current_dir().context("Failed to get current working directory")?
     };
 
     // Discover scripts from multiple locations:
@@ -72,7 +67,7 @@ async fn run_application(args: Args) -> Result<()> {
     // 3. ./scripts/ folder (if exists)
     // 4. ./jarvis/ folder (if exists)
     let mut script_files = Vec::new();
-    
+
     // Scan current directory for .sh files (shallow, only immediate directory)
     let root_files = script::discover_scripts_shallow(&current_dir)
         .with_context(|| format!("Failed to discover scripts in: {}", current_dir.display()))?;
@@ -83,21 +78,30 @@ async fn run_application(args: Args) -> Result<()> {
     for dir_name in possible_dirs {
         let dir_path = current_dir.join(dir_name);
         if dir_path.exists() && dir_path.is_dir() {
-            let files = script::discover_scripts(&dir_path)
-                .with_context(|| format!("Failed to discover scripts in: {}", dir_path.display()))?;
+            let files = script::discover_scripts(&dir_path).with_context(|| {
+                format!("Failed to discover scripts in: {}", dir_path.display())
+            })?;
             script_files.extend(files);
         }
     }
 
     if script_files.is_empty() {
-        eprintln!("Warning: No bash scripts (.sh files) found");
+        eprintln!("Warning: No scripts found");
         eprintln!("Searched in: {}", current_dir.display());
         eprintln!("Also checked: ./script/, ./scripts/, ./jarvis/ (if they exist)");
-        eprintln!("\nPlease add bash scripts with functions to get started.");
-        eprintln!("\nExample script format:");
+        eprintln!(
+            "\nPlease add bash scripts (.sh) or Node.js projects (package.json) to get started."
+        );
+        eprintln!("\nExample bash script format:");
         eprintln!(r#"  #!/usr/bin/env bash"#);
         eprintln!(r#"  my_function() {{"#);
         eprintln!(r#"      echo "Hello from my function""#);
+        eprintln!(r#"  }}"#);
+        eprintln!("\nExample package.json format:");
+        eprintln!(r#"  {{"#);
+        eprintln!(r#"    "scripts": {{"#);
+        eprintln!(r#"      "start": "node index.js""#);
+        eprintln!(r#"    }}"#);
         eprintln!(r#"  }}"#);
         std::process::exit(1);
     }
@@ -107,17 +111,41 @@ async fn run_application(args: Args) -> Result<()> {
     let mut parse_errors = Vec::new();
 
     for script_file in &script_files {
-        match script::parse_script(&script_file.path, &script_file.category) {
-            Ok(functions) => {
-                // Filter out ignored functions
-                let visible_functions: Vec<_> = functions
-                    .into_iter()
-                    .filter(|f| !f.ignored)
-                    .collect();
-                all_functions.extend(visible_functions);
+        match &script_file.script_type {
+            script::ScriptType::Bash => {
+                match script::parse_script(&script_file.path, &script_file.category) {
+                    Ok(functions) => {
+                        // Filter out ignored functions
+                        let visible_functions: Vec<_> =
+                            functions.into_iter().filter(|f| !f.ignored).collect();
+                        all_functions.extend(visible_functions);
+                    }
+                    Err(e) => {
+                        parse_errors.push((script_file.path.display().to_string(), e));
+                    }
+                }
             }
-            Err(e) => {
-                parse_errors.push((script_file.path.display().to_string(), e));
+            script::ScriptType::PackageJson => {
+                match script::parse_package_json(&script_file.path, &script_file.category) {
+                    Ok(npm_scripts) => {
+                        // Convert NpmScript to ScriptFunction for TUI
+                        let functions: Vec<script::ScriptFunction> = npm_scripts
+                            .into_iter()
+                            .map(|npm_script| script::ScriptFunction {
+                                name: npm_script.name,
+                                display_name: npm_script.display_name,
+                                category: npm_script.category,
+                                description: npm_script.description,
+                                emoji: None, // npm scripts don't have emoji support yet
+                                ignored: false, // npm scripts are never ignored
+                            })
+                            .collect();
+                        all_functions.extend(functions);
+                    }
+                    Err(e) => {
+                        parse_errors.push((script_file.path.display().to_string(), e));
+                    }
+                }
             }
         }
     }
@@ -142,27 +170,25 @@ async fn run_application(args: Args) -> Result<()> {
     }
 
     // Setup terminal
-    enable_raw_mode()
-        .context("Failed to enable raw mode for terminal")?;
-    
+    enable_raw_mode().context("Failed to enable raw mode for terminal")?;
+
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)
         .context("Failed to setup terminal")?;
-    
+
     let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)
-        .context("Failed to create terminal")?;
+    let mut terminal = Terminal::new(backend).context("Failed to create terminal")?;
 
     // Create app with formatted project name
     let project_name = current_dir
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("Project");
-    
+
     let formatted_project_name = format_display_name(project_name);
-    
+
     let mut app = App::new(all_functions, formatted_project_name);
-    
+
     // Build category display names map from script files
     let mut category_display_names = std::collections::HashMap::new();
     for script_file in &script_files {
@@ -188,50 +214,49 @@ async fn run_application(args: Args) -> Result<()> {
 
 /// Clean up terminal state
 fn cleanup_terminal(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
-    disable_raw_mode()
-        .context("Failed to disable raw mode")?;
-    
+    disable_raw_mode().context("Failed to disable raw mode")?;
+
     execute!(
         terminal.backend_mut(),
         LeaveAlternateScreen,
         DisableMouseCapture
     )
     .context("Failed to restore terminal")?;
-    
-    terminal.show_cursor()
-        .context("Failed to show cursor")?;
-    
+
+    terminal.show_cursor().context("Failed to show cursor")?;
+
     Ok(())
 }
 
 /// Suspend the TUI and restore terminal for interactive command execution
 fn suspend_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
-    disable_raw_mode()
-        .context("Failed to disable raw mode when suspending TUI")?;
+    disable_raw_mode().context("Failed to disable raw mode when suspending TUI")?;
     execute!(
         terminal.backend_mut(),
         LeaveAlternateScreen,
         DisableMouseCapture
     )
     .context("Failed to leave alternate screen when suspending TUI")?;
-    terminal.show_cursor()
+    terminal
+        .show_cursor()
         .context("Failed to show cursor when suspending TUI")?;
     Ok(())
 }
 
 /// Resume the TUI after interactive command execution
 fn resume_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
-    enable_raw_mode()
-        .context("Failed to enable raw mode when resuming TUI")?;
+    enable_raw_mode().context("Failed to enable raw mode when resuming TUI")?;
     execute!(
         terminal.backend_mut(),
         EnterAlternateScreen,
         EnableMouseCapture
     )
     .context("Failed to enter alternate screen when resuming TUI")?;
-    terminal.hide_cursor()
+    terminal
+        .hide_cursor()
         .context("Failed to hide cursor when resuming TUI")?;
-    terminal.clear()
+    terminal
+        .clear()
         .context("Failed to clear terminal when resuming TUI")?;
     Ok(())
 }
@@ -242,12 +267,11 @@ async fn run_app(
     script_files: &[script::ScriptFile],
 ) -> Result<()> {
     loop {
-        terminal.draw(|f| ui::render(f, app))
+        terminal
+            .draw(|f| ui::render(f, app))
             .context("Failed to draw terminal UI")?;
 
-        if let Event::Key(key) = event::read()
-            .context("Failed to read keyboard event")? 
-        {
+        if let Event::Key(key) = event::read().context("Failed to read keyboard event")? {
             // Handle info modal close first
             if app.show_info {
                 match key.code {
@@ -294,11 +318,29 @@ async fn run_app(
                                 println!("║  Executing: {:<27}║", display_name);
                                 println!("╚════════════════════════════════════════╝\n");
 
-                                // Execute the function with full terminal access
-                                let exit_code = script::execute_function_interactive(
-                                    &script_file.path,
-                                    &func_name,
-                                )?;
+                                // Execute based on script type
+                                let exit_code = match &script_file.script_type {
+                                    script::ScriptType::Bash => {
+                                        script::execute_function_interactive(
+                                            &script_file.path,
+                                            &func_name,
+                                        )?
+                                    }
+                                    script::ScriptType::PackageJson => {
+                                        // For npm scripts, pass the directory (parent of package.json)
+                                        let package_dir =
+                                            script_file.path.parent().with_context(|| {
+                                                format!(
+                                                    "Failed to get parent directory of: {}",
+                                                    script_file.path.display()
+                                                )
+                                            })?;
+                                        script::execute_npm_script_interactive(
+                                            package_dir,
+                                            &func_name,
+                                        )?
+                                    }
+                                };
 
                                 // Show completion status
                                 println!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
@@ -310,11 +352,11 @@ async fn run_app(
                                 println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
                                 println!("\nPress Enter to return to JARVIS...");
 
-                                    // Wait for user to press Enter
-                                    let mut input = String::new();
-                                    if let Err(e) = std::io::stdin().read_line(&mut input) {
-                                        eprintln!("Warning: Failed to read input: {}", e);
-                                    }
+                                // Wait for user to press Enter
+                                let mut input = String::new();
+                                if let Err(e) = std::io::stdin().read_line(&mut input) {
+                                    eprintln!("Warning: Failed to read input: {}", e);
+                                }
 
                                 // Store execution result in app output
                                 app.output.clear();
@@ -407,11 +449,31 @@ async fn run_app(
                                         println!("║  Executing: {:<27}║", display_name);
                                         println!("╚════════════════════════════════════════╝\n");
 
-                                        // Execute the function with full terminal access
-                                        let exit_code = script::execute_function_interactive(
-                                            &script_file.path,
-                                            &func_name,
-                                        )?;
+                                        // Execute based on script type
+                                        let exit_code = match &script_file.script_type {
+                                            script::ScriptType::Bash => {
+                                                script::execute_function_interactive(
+                                                    &script_file.path,
+                                                    &func_name,
+                                                )?
+                                            }
+                                            script::ScriptType::PackageJson => {
+                                                // For npm scripts, pass the directory (parent of package.json)
+                                                let package_dir = script_file
+                                                    .path
+                                                    .parent()
+                                                    .with_context(|| {
+                                                        format!(
+                                                            "Failed to get parent directory of: {}",
+                                                            script_file.path.display()
+                                                        )
+                                                    })?;
+                                                script::execute_npm_script_interactive(
+                                                    package_dir,
+                                                    &func_name,
+                                                )?
+                                            }
+                                        };
 
                                         // Show completion status
                                         println!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
@@ -429,23 +491,24 @@ async fn run_app(
                                             eprintln!("Warning: Failed to read input: {}", e);
                                         }
 
-                                    // Store execution result in app output
-                                    app.output.clear();
-                                    app.reset_output_scroll();
-                                    app.output.push(format!("Function: {}", display_name));
-                                    app.output.push(format!("Category: {}", category));
-                                    app.output.push("".to_string());
-                                    if exit_code == 0 {
-                                        app.output
-                                            .push("Status: ✅ Completed successfully!".to_string());
-                                    } else {
-                                        app.output.push(format!(
-                                            "Status: ❌ Failed with exit code: {}",
-                                            exit_code
-                                        ));
-                                    }
+                                        // Store execution result in app output
+                                        app.output.clear();
+                                        app.reset_output_scroll();
+                                        app.output.push(format!("Function: {}", display_name));
+                                        app.output.push(format!("Category: {}", category));
+                                        app.output.push("".to_string());
+                                        if exit_code == 0 {
+                                            app.output.push(
+                                                "Status: ✅ Completed successfully!".to_string(),
+                                            );
+                                        } else {
+                                            app.output.push(format!(
+                                                "Status: ❌ Failed with exit code: {}",
+                                                exit_code
+                                            ));
+                                        }
 
-                                    // Resume TUI
+                                        // Resume TUI
                                         resume_tui(terminal)?;
                                     }
                                 }

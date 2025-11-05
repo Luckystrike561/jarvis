@@ -7,23 +7,20 @@ use std::process::{Command, Stdio};
 pub fn execute_function_interactive(script_path: &Path, function_name: &str) -> Result<i32> {
     // Validate inputs
     if !script_path.exists() {
-        anyhow::bail!(
-            "Script file not found: {}",
-            script_path.display()
-        );
+        anyhow::bail!("Script file not found: {}", script_path.display());
     }
 
     if !script_path.is_file() {
-        anyhow::bail!(
-            "Path is not a file: {}",
-            script_path.display()
-        );
+        anyhow::bail!("Path is not a file: {}", script_path.display());
     }
 
     // Get script directory and name
-    let script_dir = script_path
-        .parent()
-        .with_context(|| format!("Failed to get parent directory for: {}", script_path.display()))?;
+    let script_dir = script_path.parent().with_context(|| {
+        format!(
+            "Failed to get parent directory for: {}",
+            script_path.display()
+        )
+    })?;
 
     let script_name = script_path
         .file_name()
@@ -69,6 +66,48 @@ pub fn execute_function_interactive(script_path: &Path, function_name: &str) -> 
     Ok(status.code().unwrap_or(1))
 }
 
+/// Execute an npm script interactively with full terminal access
+pub fn execute_npm_script_interactive(package_dir: &Path, script_name: &str) -> Result<i32> {
+    // Validate inputs
+    if !package_dir.exists() {
+        anyhow::bail!("Directory not found: {}", package_dir.display());
+    }
+
+    if !package_dir.is_dir() {
+        anyhow::bail!("Path is not a directory: {}", package_dir.display());
+    }
+
+    // Check if package.json exists
+    let package_json = package_dir.join("package.json");
+    if !package_json.exists() {
+        anyhow::bail!("package.json not found in: {}", package_dir.display());
+    }
+
+    // Validate script name
+    if script_name.is_empty() {
+        anyhow::bail!("Script name cannot be empty");
+    }
+
+    // Execute npm run with inherited stdin/stdout/stderr for full interactivity
+    let status = Command::new("npm")
+        .arg("run")
+        .arg(script_name)
+        .current_dir(package_dir)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .with_context(|| {
+            format!(
+                "Failed to execute npm script '{}' in directory '{}'",
+                script_name,
+                package_dir.display()
+            )
+        })?;
+
+    Ok(status.code().unwrap_or(1))
+}
+
 /// Check if a string is a valid bash identifier
 fn is_valid_bash_identifier(name: &str) -> bool {
     if name.is_empty() {
@@ -95,7 +134,7 @@ mod tests {
     fn test_execute_function_interactive_success() {
         let temp_dir = TempDir::new().unwrap();
         let script_path = temp_dir.path().join("test.sh");
-        
+
         let content = r#"#!/bin/bash
 test_function() {
     echo "Test successful"
@@ -113,7 +152,7 @@ test_function() {
     fn test_execute_function_interactive_failure() {
         let temp_dir = TempDir::new().unwrap();
         let script_path = temp_dir.path().join("test.sh");
-        
+
         let content = r#"#!/bin/bash
 failing_function() {
     echo "This will fail"
@@ -141,21 +180,24 @@ failing_function() {
     fn test_execute_function_interactive_invalid_function_name() {
         let temp_dir = TempDir::new().unwrap();
         let script_path = temp_dir.path().join("test.sh");
-        
+
         let content = "#!/bin/bash\necho 'test'";
         fs::write(&script_path, content).unwrap();
 
         // Test with invalid function name (starts with number)
         let result = execute_function_interactive(&script_path, "123invalid");
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid function name"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid function name"));
     }
 
     #[test]
     fn test_execute_function_interactive_empty_function_name() {
         let temp_dir = TempDir::new().unwrap();
         let script_path = temp_dir.path().join("test.sh");
-        
+
         let content = "#!/bin/bash\necho 'test'";
         fs::write(&script_path, content).unwrap();
 
@@ -177,7 +219,7 @@ failing_function() {
     fn test_execute_function_interactive_undefined_function() {
         let temp_dir = TempDir::new().unwrap();
         let script_path = temp_dir.path().join("test.sh");
-        
+
         let content = r#"#!/bin/bash
 defined_function() {
     echo "I exist"
@@ -218,7 +260,7 @@ defined_function() {
     fn test_execute_function_with_exit_code() {
         let temp_dir = TempDir::new().unwrap();
         let script_path = temp_dir.path().join("test.sh");
-        
+
         let content = r#"#!/bin/bash
 custom_exit() {
     exit 42

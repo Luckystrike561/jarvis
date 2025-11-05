@@ -2,6 +2,12 @@ use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum ScriptType {
+    Bash,
+    PackageJson,
+}
+
 #[derive(Debug, Clone)]
 pub struct ScriptFile {
     pub path: PathBuf,
@@ -9,6 +15,7 @@ pub struct ScriptFile {
     pub name: String,
     pub category: String,
     pub display_name: String,
+    pub script_type: ScriptType,
 }
 
 /// Formats a filename into a display-friendly name
@@ -80,7 +87,35 @@ fn discover_scripts_with_depth(scripts_dir: &Path, max_depth: usize) -> Result<V
             continue;
         }
 
-        // Check file extension
+        // Check filename for package.json
+        if let Some(filename) = path.file_name().and_then(|f| f.to_str()) {
+            if filename == "package.json" {
+                // Extract parent directory name for category
+                let name = if let Some(parent) = path.parent() {
+                    parent
+                        .file_name()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("node")
+                        .to_string()
+                } else {
+                    "node".to_string()
+                };
+
+                let category = name.clone();
+                let display_name = format_display_name(&name);
+
+                scripts.push(ScriptFile {
+                    path: path.to_path_buf(),
+                    name,
+                    category,
+                    display_name,
+                    script_type: ScriptType::PackageJson,
+                });
+                continue;
+            }
+        }
+
+        // Check file extension for .sh files
         let extension = match path.extension() {
             Some(ext) => ext,
             None => continue,
@@ -107,6 +142,7 @@ fn discover_scripts_with_depth(scripts_dir: &Path, max_depth: usize) -> Result<V
             name,
             category,
             display_name,
+            script_type: ScriptType::Bash,
         });
     }
 
@@ -145,12 +181,13 @@ mod tests {
         assert_eq!(result[0].name, "test");
         assert_eq!(result[0].category, "test");
         assert_eq!(result[0].display_name, "Test");
+        assert_eq!(result[0].script_type, ScriptType::Bash);
     }
 
     #[test]
     fn test_discover_scripts_categorization() {
         let temp_dir = TempDir::new().unwrap();
-        
+
         // Create scripts with different names
         fs::write(temp_dir.path().join("fedora.sh"), "#!/bin/bash").unwrap();
         fs::write(temp_dir.path().join("homelab.sh"), "#!/bin/bash").unwrap();
@@ -181,7 +218,7 @@ mod tests {
     #[test]
     fn test_discover_scripts_ignores_non_sh_files() {
         let temp_dir = TempDir::new().unwrap();
-        
+
         fs::write(temp_dir.path().join("script.sh"), "#!/bin/bash").unwrap();
         fs::write(temp_dir.path().join("readme.txt"), "text file").unwrap();
         fs::write(temp_dir.path().join("data.json"), "{}").unwrap();
@@ -195,10 +232,10 @@ mod tests {
     #[test]
     fn test_discover_scripts_subdirectories() {
         let temp_dir = TempDir::new().unwrap();
-        
+
         // Create script in root
         fs::write(temp_dir.path().join("root.sh"), "#!/bin/bash").unwrap();
-        
+
         // Create subdirectory with script
         let sub_dir = temp_dir.path().join("subdir");
         fs::create_dir(&sub_dir).unwrap();
@@ -222,7 +259,7 @@ mod tests {
     #[test]
     fn test_discover_scripts_with_emoji_filenames() {
         let temp_dir = TempDir::new().unwrap();
-        
+
         // Create scripts with emoji in filenames
         fs::write(temp_dir.path().join("🏠 homelab.sh"), "#!/bin/bash").unwrap();
         fs::write(temp_dir.path().join("🛠️ utilities.sh"), "#!/bin/bash").unwrap();
@@ -248,12 +285,16 @@ mod tests {
     #[test]
     fn test_discover_scripts_with_underscores_and_hyphens() {
         let temp_dir = TempDir::new().unwrap();
-        
+
         // Create scripts with underscores and hyphens
         fs::write(temp_dir.path().join("example_file.sh"), "#!/bin/bash").unwrap();
         fs::write(temp_dir.path().join("example-file.sh"), "#!/bin/bash").unwrap();
         fs::write(temp_dir.path().join("my_test_script.sh"), "#!/bin/bash").unwrap();
-        fs::write(temp_dir.path().join("another-test-script.sh"), "#!/bin/bash").unwrap();
+        fs::write(
+            temp_dir.path().join("another-test-script.sh"),
+            "#!/bin/bash",
+        )
+        .unwrap();
 
         let result = discover_scripts(temp_dir.path()).unwrap();
         assert_eq!(result.len(), 4);
@@ -274,7 +315,10 @@ mod tests {
         assert_eq!(my_test.display_name, "My Test Script");
 
         // Check multiple hyphens
-        let another_test = result.iter().find(|s| s.name == "another-test-script").unwrap();
+        let another_test = result
+            .iter()
+            .find(|s| s.name == "another-test-script")
+            .unwrap();
         assert_eq!(another_test.category, "another-test-script");
         assert_eq!(another_test.display_name, "Another Test Script");
     }
@@ -285,10 +329,64 @@ mod tests {
         assert_eq!(format_display_name("example_file"), "Example File");
         assert_eq!(format_display_name("example-file"), "Example File");
         assert_eq!(format_display_name("my_test_script"), "My Test Script");
-        assert_eq!(format_display_name("another-test-script"), "Another Test Script");
+        assert_eq!(
+            format_display_name("another-test-script"),
+            "Another Test Script"
+        );
         assert_eq!(format_display_name("🏠 homelab"), "🏠 Homelab");
         assert_eq!(format_display_name("🛠️ utilities"), "🛠️ Utilities");
         assert_eq!(format_display_name("UPPERCASE"), "Uppercase");
-        assert_eq!(format_display_name("mixed_CASE-example"), "Mixed Case Example");
+        assert_eq!(
+            format_display_name("mixed_CASE-example"),
+            "Mixed Case Example"
+        );
+    }
+
+    #[test]
+    fn test_discover_package_json() {
+        let temp_dir = TempDir::new().unwrap();
+        let package_path = temp_dir.path().join("package.json");
+
+        let content = r#"{
+  "name": "test-project",
+  "scripts": {
+    "test": "jest"
+  }
+}"#;
+        fs::write(&package_path, content).unwrap();
+
+        let result = discover_scripts(temp_dir.path()).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].script_type, ScriptType::PackageJson);
+        // Category should be the parent directory name
+        assert!(result[0].category.len() > 0);
+    }
+
+    #[test]
+    fn test_discover_mixed_scripts() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create bash script
+        fs::write(temp_dir.path().join("script.sh"), "#!/bin/bash").unwrap();
+
+        // Create package.json
+        let content = r#"{"name": "test", "scripts": {"test": "jest"}}"#;
+        fs::write(temp_dir.path().join("package.json"), content).unwrap();
+
+        let result = discover_scripts(temp_dir.path()).unwrap();
+        assert_eq!(result.len(), 2);
+
+        // Should find both types
+        let bash_count = result
+            .iter()
+            .filter(|s| s.script_type == ScriptType::Bash)
+            .count();
+        let npm_count = result
+            .iter()
+            .filter(|s| s.script_type == ScriptType::PackageJson)
+            .count();
+
+        assert_eq!(bash_count, 1);
+        assert_eq!(npm_count, 1);
     }
 }

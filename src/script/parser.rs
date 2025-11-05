@@ -33,14 +33,13 @@ pub fn parse_script(path: &Path, category: &str) -> Result<Vec<ScriptFunction>> 
         .context("Failed to compile function regex pattern")?;
 
     // Regex patterns for metadata comments
-    let emoji_re = Regex::new(r"^\s*#\s*@emoji\s+(.+)$")
-        .context("Failed to compile emoji regex pattern")?;
+    let emoji_re =
+        Regex::new(r"^\s*#\s*@emoji\s+(.+)$").context("Failed to compile emoji regex pattern")?;
     let desc_re = Regex::new(r"^\s*#\s*@description\s+(.+)$")
         .context("Failed to compile description regex pattern")?;
-    let ignore_re = Regex::new(r"^\s*#\s*@ignore\s*$")
-        .context("Failed to compile ignore regex pattern")?;
-    let comment_re = Regex::new(r"^\s*#")
-        .context("Failed to compile comment regex pattern")?;
+    let ignore_re =
+        Regex::new(r"^\s*#\s*@ignore\s*$").context("Failed to compile ignore regex pattern")?;
+    let comment_re = Regex::new(r"^\s*#").context("Failed to compile comment regex pattern")?;
 
     // Iterate through lines to find function definitions
     for (line_idx, line) in lines.iter().enumerate() {
@@ -63,29 +62,29 @@ pub fn parse_script(path: &Path, category: &str) -> Result<Vec<ScriptFunction>> 
                 if check_idx >= line_idx {
                     break; // Underflow protection
                 }
-                
+
                 let prev_line = lines[check_idx];
-                
+
                 // If we hit a non-comment, non-empty line, stop looking back
                 if !prev_line.trim().is_empty() && !comment_re.is_match(prev_line) {
                     break;
                 }
-                
+
                 // Check for ignore annotation
                 if ignore_re.is_match(prev_line) {
                     ignored = true;
                 }
-                
+
                 // Check for emoji annotation
                 if let Some(emoji_cap) = emoji_re.captures(prev_line) {
                     emoji = Some(emoji_cap[1].trim().to_string());
                 }
-                
+
                 // Check for description annotation
                 if let Some(desc_cap) = desc_re.captures(prev_line) {
                     description = Some(desc_cap[1].trim().to_string());
                 }
-                
+
                 if check_idx == 0 {
                     break;
                 }
@@ -96,7 +95,8 @@ pub fn parse_script(path: &Path, category: &str) -> Result<Vec<ScriptFunction>> 
             let display_name = format_display_name(func_name);
 
             // Use custom description if provided, otherwise generate default
-            let final_description = description.unwrap_or_else(|| format!("Execute: {}", display_name));
+            let final_description =
+                description.unwrap_or_else(|| format!("Execute: {}", display_name));
 
             functions.push(ScriptFunction {
                 name: func_name.to_string(),
@@ -138,7 +138,7 @@ mod tests {
     fn test_parse_script_valid_single_function() {
         let temp_dir = TempDir::new().unwrap();
         let script_path = temp_dir.path().join("test.sh");
-        
+
         let content = r#"#!/bin/bash
 
 hello_world() {
@@ -158,7 +158,7 @@ hello_world() {
     fn test_parse_script_multiple_functions() {
         let temp_dir = TempDir::new().unwrap();
         let script_path = temp_dir.path().join("test.sh");
-        
+
         let content = r#"#!/bin/bash
 
 func_one() {
@@ -189,7 +189,7 @@ func_three() {
     fn test_parse_script_function_keyword() {
         let temp_dir = TempDir::new().unwrap();
         let script_path = temp_dir.path().join("test.sh");
-        
+
         let content = r#"#!/bin/bash
 
 function first() {
@@ -214,7 +214,7 @@ function second() {
     fn test_parse_script_no_functions() {
         let temp_dir = TempDir::new().unwrap();
         let script_path = temp_dir.path().join("test.sh");
-        
+
         let content = r#"#!/bin/bash
 echo "Just a script"
 "#;
@@ -228,7 +228,7 @@ echo "Just a script"
     fn test_parse_script_empty_file() {
         let temp_dir = TempDir::new().unwrap();
         let script_path = temp_dir.path().join("test.sh");
-        
+
         let content = "";
         fs::write(&script_path, content).unwrap();
 
@@ -268,7 +268,7 @@ echo "Just a script"
     fn test_parse_script_underscore_functions() {
         let temp_dir = TempDir::new().unwrap();
         let script_path = temp_dir.path().join("test.sh");
-        
+
         let content = r#"#!/bin/bash
 
 my_custom_function() {
@@ -293,7 +293,7 @@ another_test_func() {
     fn test_parse_script_mixed_styles() {
         let temp_dir = TempDir::new().unwrap();
         let script_path = temp_dir.path().join("test.sh");
-        
+
         let content = r#"#!/bin/bash
 
 # Function with 'function' keyword
@@ -324,7 +324,7 @@ function another_with_keyword() {
     fn test_parse_script_whitespace_variations() {
         let temp_dir = TempDir::new().unwrap();
         let script_path = temp_dir.path().join("test.sh");
-        
+
         let content = r#"#!/bin/bash
 
 # Various whitespace patterns
@@ -358,7 +358,7 @@ function func4(){
     fn test_parse_script_with_emoji_annotation() {
         let temp_dir = TempDir::new().unwrap();
         let script_path = temp_dir.path().join("test.sh");
-        
+
         let content = r#"#!/bin/bash
 
 # @emoji 🚀
@@ -380,19 +380,22 @@ test_suite() {
         fs::write(&script_path, content).unwrap();
 
         let result = parse_script(&script_path, "Test").unwrap();
-        
+
         assert_eq!(result.len(), 3);
-        
+
         // First function with both emoji and description
         assert_eq!(result[0].name, "deploy_app");
         assert_eq!(result[0].emoji, Some("🚀".to_string()));
-        assert_eq!(result[0].description, "Deploy the application to production");
-        
+        assert_eq!(
+            result[0].description,
+            "Deploy the application to production"
+        );
+
         // Second function without annotations
         assert_eq!(result[1].name, "simple_func");
         assert_eq!(result[1].emoji, None);
         assert_eq!(result[1].description, "Execute: Simple Func");
-        
+
         // Third function with emoji only
         assert_eq!(result[2].name, "test_suite");
         assert_eq!(result[2].emoji, Some("🧪".to_string()));
@@ -403,7 +406,7 @@ test_suite() {
     fn test_parse_script_description_only() {
         let temp_dir = TempDir::new().unwrap();
         let script_path = temp_dir.path().join("test.sh");
-        
+
         let content = r#"#!/bin/bash
 
 # @description This is a custom description
@@ -424,7 +427,7 @@ my_function() {
     fn test_parse_script_annotations_with_spacing() {
         let temp_dir = TempDir::new().unwrap();
         let script_path = temp_dir.path().join("test.sh");
-        
+
         let content = r#"#!/bin/bash
 
 #@emoji    💾  
@@ -446,7 +449,7 @@ backup_db() {
     fn test_parse_script_ignore_annotation() {
         let temp_dir = TempDir::new().unwrap();
         let script_path = temp_dir.path().join("test.sh");
-        
+
         let content = r#"#!/bin/bash
 
 # @ignore
@@ -462,11 +465,11 @@ public_function() {
 
         let result = parse_script(&script_path, "Test").unwrap();
         assert_eq!(result.len(), 2);
-        
+
         // First function should be ignored
         let format_func = result.iter().find(|f| f.name == "format_string").unwrap();
         assert_eq!(format_func.ignored, true);
-        
+
         // Second function should not be ignored
         let public_func = result.iter().find(|f| f.name == "public_function").unwrap();
         assert_eq!(public_func.ignored, false);
@@ -476,7 +479,7 @@ public_function() {
     fn test_parse_script_ignore_with_other_annotations() {
         let temp_dir = TempDir::new().unwrap();
         let script_path = temp_dir.path().join("test.sh");
-        
+
         let content = r#"#!/bin/bash
 
 # @ignore
@@ -496,13 +499,16 @@ deploy() {
 
         let result = parse_script(&script_path, "Test").unwrap();
         assert_eq!(result.len(), 2);
-        
+
         // Helper function should be ignored but still have metadata
-        let helper = result.iter().find(|f| f.name == "_helper_function").unwrap();
+        let helper = result
+            .iter()
+            .find(|f| f.name == "_helper_function")
+            .unwrap();
         assert_eq!(helper.ignored, true);
         assert_eq!(helper.emoji, Some("🔧".to_string()));
         assert_eq!(helper.description, "Helper function for string formatting");
-        
+
         // Deploy function should not be ignored
         let deploy = result.iter().find(|f| f.name == "deploy").unwrap();
         assert_eq!(deploy.ignored, false);
@@ -514,7 +520,7 @@ deploy() {
     fn test_parse_script_multiple_ignored_functions() {
         let temp_dir = TempDir::new().unwrap();
         let script_path = temp_dir.path().join("test.sh");
-        
+
         let content = r#"#!/bin/bash
 
 # @ignore
@@ -540,11 +546,11 @@ another_helper() {
 
         let result = parse_script(&script_path, "Test").unwrap();
         assert_eq!(result.len(), 4);
-        
+
         // Count ignored functions
         let ignored_count = result.iter().filter(|f| f.ignored).count();
         assert_eq!(ignored_count, 3);
-        
+
         // Verify main_function is not ignored
         let main = result.iter().find(|f| f.name == "main_function").unwrap();
         assert_eq!(main.ignored, false);
