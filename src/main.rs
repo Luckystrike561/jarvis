@@ -2,18 +2,36 @@ mod script;
 mod ui;
 
 use anyhow::{Context, Result};
+use clap::Parser;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
+use script::format_display_name;
 use std::io;
 use std::panic;
+use std::path::PathBuf;
 use ui::App;
+
+/// Jarvis - A beautiful TUI for managing and executing bash scripts
+#[derive(Parser, Debug)]
+#[command(name = "jarvis")]
+#[command(author = "Luckystrike561")]
+#[command(version = "0.1.0")]
+#[command(about = "Your trusted AI assistant for automating scripts", long_about = None)]
+struct Args {
+    /// Path to the base directory to search for bash scripts
+    #[arg(short, long, value_name = "DIR")]
+    path: Option<PathBuf>,
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Parse command-line arguments
+    let args = Args::parse();
+
     // Set up panic hook to ensure terminal is restored on panic
     let original_hook = panic::take_hook();
     panic::set_hook(Box::new(move |panic_info| {
@@ -30,7 +48,7 @@ async fn main() -> Result<()> {
     }));
 
     // Run the application and ensure cleanup happens
-    let result = run_application().await;
+    let result = run_application(args).await;
 
     // Restore panic hook
     let _ = panic::take_hook();
@@ -38,43 +56,49 @@ async fn main() -> Result<()> {
     result
 }
 
-async fn run_application() -> Result<()> {
-    // Get the scripts and jarvis directories
-    let current_dir = std::env::current_dir()
-        .context("Failed to get current working directory")?;
-    let scripts_dir = current_dir.join("scripts");
-    let jarvis_dir = current_dir.join("jarvis");
+async fn run_application(args: Args) -> Result<()> {
+    // Get the base directory - use provided path or current directory
+    let current_dir = if let Some(path) = args.path {
+        path.canonicalize()
+            .with_context(|| format!("Failed to access directory: {}", path.display()))?
+    } else {
+        std::env::current_dir()
+            .context("Failed to get current working directory")?
+    };
 
-    // Check if at least one directory exists
-    if !scripts_dir.exists() && !jarvis_dir.exists() {
-        anyhow::bail!(
-            "Neither 'scripts' nor 'jarvis' directory found.\n\
-             Searched in: {}\n\
-             Please run from a directory containing at least one of these folders.",
-            current_dir.display()
-        );
-    }
-
-    // Discover scripts from both directories
+    // Discover scripts from multiple locations:
+    // 1. Current directory (root .sh files only, depth 1 to avoid subdirs)
+    // 2. ./script/ folder (if exists)
+    // 3. ./scripts/ folder (if exists)
+    // 4. ./jarvis/ folder (if exists)
     let mut script_files = Vec::new();
+    
+    // Scan current directory for .sh files (shallow, only immediate directory)
+    let root_files = script::discover_scripts_shallow(&current_dir)
+        .with_context(|| format!("Failed to discover scripts in: {}", current_dir.display()))?;
+    script_files.extend(root_files);
 
-    if scripts_dir.exists() {
-        let files = script::discover_scripts(&scripts_dir)
-            .with_context(|| format!("Failed to discover scripts in: {}", scripts_dir.display()))?;
-        script_files.extend(files);
-    }
-
-    if jarvis_dir.exists() {
-        let files = script::discover_scripts(&jarvis_dir)
-            .with_context(|| format!("Failed to discover scripts in: {}", jarvis_dir.display()))?;
-        script_files.extend(files);
+    // Check optional subdirectories (with depth 2 for nested structures)
+    let possible_dirs = vec!["script", "scripts", "jarvis"];
+    for dir_name in possible_dirs {
+        let dir_path = current_dir.join(dir_name);
+        if dir_path.exists() && dir_path.is_dir() {
+            let files = script::discover_scripts(&dir_path)
+                .with_context(|| format!("Failed to discover scripts in: {}", dir_path.display()))?;
+            script_files.extend(files);
+        }
     }
 
     if script_files.is_empty() {
-        eprintln!("Warning: No bash scripts (.sh files) found in scripts or jarvis directories");
-        eprintln!("Please add bash scripts with function arrays to get started.");
+        eprintln!("Warning: No bash scripts (.sh files) found");
+        eprintln!("Searched in: {}", current_dir.display());
+        eprintln!("Also checked: ./script/, ./scripts/, ./jarvis/ (if they exist)");
+        eprintln!("\nPlease add bash scripts with functions to get started.");
         eprintln!("\nExample script format:");
-        eprintln!(r#"  example_functions=("Display Name:function_name" ...)"#);
+        eprintln!(r#"  #!/usr/bin/env bash"#);
+        eprintln!(r#"  my_function() {{"#);
+        eprintln!(r#"      echo "Hello from my function""#);
+        eprintln!(r#"  }}"#);
         std::process::exit(1);
     }
 
@@ -85,7 +109,12 @@ async fn run_application() -> Result<()> {
     for script_file in &script_files {
         match script::parse_script(&script_file.path, &script_file.category) {
             Ok(functions) => {
-                all_functions.extend(functions);
+                // Filter out ignored functions
+                let visible_functions: Vec<_> = functions
+                    .into_iter()
+                    .filter(|f| !f.ignored)
+                    .collect();
+                all_functions.extend(visible_functions);
             }
             Err(e) => {
                 parse_errors.push((script_file.path.display().to_string(), e));
@@ -104,9 +133,11 @@ async fn run_application() -> Result<()> {
 
     if all_functions.is_empty() {
         eprintln!("Error: No functions found in any scripts");
-        eprintln!("\nMake sure your scripts have function arrays like:");
-        eprintln!(r#"  script_functions=("Display Name:function_name" ...)"#);
-        eprintln!("\nAnd implement the corresponding functions in the script.");
+        eprintln!("\nMake sure your scripts define bash functions:");
+        eprintln!(r#"  my_function() {{"#);
+        eprintln!(r#"      echo "Hello""#);
+        eprintln!(r#"  }}"#);
+        eprintln!("\nAll bash functions are automatically discovered.");
         std::process::exit(1);
     }
 
@@ -122,8 +153,25 @@ async fn run_application() -> Result<()> {
     let mut terminal = Terminal::new(backend)
         .context("Failed to create terminal")?;
 
-    // Create app
-    let mut app = App::new(all_functions);
+    // Create app with formatted project name
+    let project_name = current_dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("Project");
+    
+    let formatted_project_name = format_display_name(project_name);
+    
+    let mut app = App::new(all_functions, formatted_project_name);
+    
+    // Build category display names map from script files
+    let mut category_display_names = std::collections::HashMap::new();
+    for script_file in &script_files {
+        category_display_names.insert(
+            script_file.category.clone(),
+            script_file.display_name.clone(),
+        );
+    }
+    app.set_category_display_names(category_display_names);
 
     // Run the app and ensure cleanup happens even on error
     let run_result = run_app(&mut terminal, &mut app, &script_files).await;

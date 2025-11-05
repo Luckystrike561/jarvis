@@ -1,0 +1,61 @@
+{
+  "name": "jarvis-node-example",
+  "version": "1.0.0",
+  "description": "Example Node.js project demonstrating Jarvis TUI integration",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "build": "webpack --mode production",
+    "build:dev": "webpack --mode development",
+    "test": "jest --coverage",
+    "test:watch": "jest --watch",
+    "test:unit": "jest --testPathPattern=unit",
+    "test:integration": "jest --testPathPattern=integration",
+    "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
+    "lint:fix": "eslint . --ext .js,.jsx,.ts,.tsx --fix",
+    "format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,css,md}\"",
+    "format:check": "prettier --check \"**/*.{js,jsx,ts,tsx,json,css,md}\"",
+    "type-check": "tsc --noEmit",
+    "clean": "rm -rf dist node_modules coverage",
+    "install:clean": "rm -rf node_modules package-lock.json && npm install",
+    "audit": "npm audit --audit-level=moderate",
+    "audit:fix": "npm audit fix",
+    "deploy": "npm run build && npm run deploy:prod",
+    "deploy:prod": "echo 'Deploying to production...' && node scripts/deploy.js",
+    "deploy:staging": "echo 'Deploying to staging...' && node scripts/deploy.js --env=staging",
+    "db:migrate": "node scripts/migrate.js",
+    "db:seed": "node scripts/seed.js",
+    "db:reset": "node scripts/reset.js && npm run db:migrate && npm run db:seed",
+    "docker:build": "docker build -t jarvis-node-example .",
+    "docker:run": "docker run -p 3000:3000 jarvis-node-example",
+    "docker:compose": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "logs": "tail -f logs/app.log",
+    "logs:error": "tail -f logs/error.log",
+    "benchmark": "node scripts/benchmark.js",
+    "analyze": "webpack-bundle-analyzer dist/stats.json"
+  },
+  "keywords": [
+    "jarvis",
+    "tui",
+    "bash",
+    "automation",
+    "example"
+  ],
+  "author": "Luckystrike561",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "eslint": "^8.50.0",
+    "prettier": "^3.0.3",
+    "nodemon": "^3.0.1",
+    "webpack": "^5.88.2",
+    "webpack-cli": "^5.1.4",
+    "typescript": "^5.2.2"
+  }
+}

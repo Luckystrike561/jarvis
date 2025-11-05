@@ -125,17 +125,16 @@ fn render_script_tree(frame: &mut Frame, app: &App, area: Rect) {
                 TreeItem::Category(category) => {
                     let is_expanded = app.is_category_expanded(category);
                     let icon = if is_expanded { "▼" } else { "▶" };
-                    let cat_icon = match category.as_str() {
-                        "System Management" => "🖥️",
-                        "Homelab Operations" => "🏠",
-                        "Utilities" => "🛠️",
-                        _ => "📁",
-                    };
-                    let content = format!("{} {} {}", icon, cat_icon, category);
+                    // Use the display name from the app (which includes emoji from filename)
+                    let display_name = app.get_category_display_name(category);
+                    let content = format!("{} {}", icon, display_name);
                     ListItem::new(content).style(style)
                 }
                 TreeItem::Function(func) => {
-                    let content = format!("    {}", func.display_name);
+                    let emoji_prefix = func.emoji.as_ref()
+                        .map(|e| format!("{} ", e))
+                        .unwrap_or_default();
+                    let content = format!("    {}{}", emoji_prefix, func.display_name);
                     ListItem::new(content).style(style)
                 }
             }
@@ -152,7 +151,7 @@ fn render_script_tree(frame: &mut Frame, app: &App, area: Rect) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("📁 Scripts")
+                .title(format!("🤖 {}", app.project_title))
                 .border_style(Style::default().fg(border_color)),
         )
         .style(Style::default().fg(Color::White));
@@ -175,9 +174,11 @@ fn render_details(frame: &mut Frame, app: &App, area: Rect) {
                 .filter(|f| f.category == category)
                 .count();
 
+            let display_name = app.get_category_display_name(&category);
+
             vec![
                 Line::from(vec![Span::styled(
-                    category.clone(),
+                    display_name,
                     Style::default()
                         .fg(Color::Cyan)
                         .add_modifier(Modifier::BOLD),

@@ -8,9 +8,45 @@ pub struct ScriptFile {
     #[allow(dead_code)]
     pub name: String,
     pub category: String,
+    pub display_name: String,
+}
+
+/// Formats a filename into a display-friendly name
+/// - Replaces underscores and hyphens with spaces
+/// - Capitalizes the first letter of each word
+///
+/// Examples:
+///   - "example" -> "Example"
+///   - "example_file" -> "Example File"
+///   - "example-file" -> "Example File"
+///   - "🏠 homelab" -> "🏠 Homelab"
+pub fn format_display_name(name: &str) -> String {
+    name.replace(['_', '-'], " ")
+        .split_whitespace()
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(first) => {
+                    let mut result = first.to_uppercase().to_string();
+                    result.push_str(&chars.as_str().to_lowercase());
+                    result
+                }
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 pub fn discover_scripts(scripts_dir: &Path) -> Result<Vec<ScriptFile>> {
+    discover_scripts_with_depth(scripts_dir, 2)
+}
+
+pub fn discover_scripts_shallow(scripts_dir: &Path) -> Result<Vec<ScriptFile>> {
+    discover_scripts_with_depth(scripts_dir, 1)
+}
+
+fn discover_scripts_with_depth(scripts_dir: &Path, max_depth: usize) -> Result<Vec<ScriptFile>> {
     let mut scripts = Vec::new();
 
     // Verify the directory exists and is readable
@@ -27,7 +63,7 @@ pub fn discover_scripts(scripts_dir: &Path) -> Result<Vec<ScriptFile>> {
 
     // Walk the directory and collect scripts
     for entry in WalkDir::new(scripts_dir)
-        .max_depth(2)
+        .max_depth(max_depth)
         .into_iter()
         .filter_map(|e| match e {
             Ok(entry) => Some(entry),
@@ -54,25 +90,23 @@ pub fn discover_scripts(scripts_dir: &Path) -> Result<Vec<ScriptFile>> {
             continue;
         }
 
-        // Extract filename
+        // Extract filename (without extension) to use as the category
         let name = path
             .file_stem()
             .and_then(|s| s.to_str())
             .with_context(|| format!("Invalid filename for script: {}", path.display()))?
             .to_string();
 
-        // Categorize the script
-        let category = match name.as_str() {
-            "fedora" => "System Management",
-            "homelab" => "Homelab Operations",
-            "util" => "Utilities",
-            _ => "Other",
-        };
+        // Use the filename as category (key)
+        // Format the display name for UI presentation
+        let category = name.clone();
+        let display_name = format_display_name(&name);
 
         scripts.push(ScriptFile {
             path: path.to_path_buf(),
             name,
-            category: category.to_string(),
+            category,
+            display_name,
         });
     }
 
@@ -109,7 +143,8 @@ mod tests {
         let result = discover_scripts(temp_dir.path()).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].name, "test");
-        assert_eq!(result[0].category, "Other");
+        assert_eq!(result[0].category, "test");
+        assert_eq!(result[0].display_name, "Test");
     }
 
     #[test]
@@ -125,18 +160,22 @@ mod tests {
         let result = discover_scripts(temp_dir.path()).unwrap();
         assert_eq!(result.len(), 4);
 
-        // Check categorization
+        // Check categorization - uses filename as category, formatted as display name
         let fedora = result.iter().find(|s| s.name == "fedora").unwrap();
-        assert_eq!(fedora.category, "System Management");
+        assert_eq!(fedora.category, "fedora");
+        assert_eq!(fedora.display_name, "Fedora");
 
         let homelab = result.iter().find(|s| s.name == "homelab").unwrap();
-        assert_eq!(homelab.category, "Homelab Operations");
+        assert_eq!(homelab.category, "homelab");
+        assert_eq!(homelab.display_name, "Homelab");
 
         let util = result.iter().find(|s| s.name == "util").unwrap();
-        assert_eq!(util.category, "Utilities");
+        assert_eq!(util.category, "util");
+        assert_eq!(util.display_name, "Util");
 
         let custom = result.iter().find(|s| s.name == "custom").unwrap();
-        assert_eq!(custom.category, "Other");
+        assert_eq!(custom.category, "custom");
+        assert_eq!(custom.display_name, "Custom");
     }
 
     #[test]
@@ -150,6 +189,7 @@ mod tests {
         let result = discover_scripts(temp_dir.path()).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].name, "script");
+        assert_eq!(result[0].display_name, "Script");
     }
 
     #[test]
@@ -177,5 +217,78 @@ mod tests {
         let result = discover_scripts(&file_path);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not a directory"));
+    }
+
+    #[test]
+    fn test_discover_scripts_with_emoji_filenames() {
+        let temp_dir = TempDir::new().unwrap();
+        
+        // Create scripts with emoji in filenames
+        fs::write(temp_dir.path().join("🏠 homelab.sh"), "#!/bin/bash").unwrap();
+        fs::write(temp_dir.path().join("🛠️ utilities.sh"), "#!/bin/bash").unwrap();
+        fs::write(temp_dir.path().join("🖥️ system.sh"), "#!/bin/bash").unwrap();
+
+        let result = discover_scripts(temp_dir.path()).unwrap();
+        assert_eq!(result.len(), 3);
+
+        // Check that emoji is preserved and text is capitalized
+        let homelab = result.iter().find(|s| s.name == "🏠 homelab").unwrap();
+        assert_eq!(homelab.category, "🏠 homelab");
+        assert_eq!(homelab.display_name, "🏠 Homelab");
+
+        let utilities = result.iter().find(|s| s.name == "🛠️ utilities").unwrap();
+        assert_eq!(utilities.category, "🛠️ utilities");
+        assert_eq!(utilities.display_name, "🛠️ Utilities");
+
+        let system = result.iter().find(|s| s.name == "🖥️ system").unwrap();
+        assert_eq!(system.category, "🖥️ system");
+        assert_eq!(system.display_name, "🖥️ System");
+    }
+
+    #[test]
+    fn test_discover_scripts_with_underscores_and_hyphens() {
+        let temp_dir = TempDir::new().unwrap();
+        
+        // Create scripts with underscores and hyphens
+        fs::write(temp_dir.path().join("example_file.sh"), "#!/bin/bash").unwrap();
+        fs::write(temp_dir.path().join("example-file.sh"), "#!/bin/bash").unwrap();
+        fs::write(temp_dir.path().join("my_test_script.sh"), "#!/bin/bash").unwrap();
+        fs::write(temp_dir.path().join("another-test-script.sh"), "#!/bin/bash").unwrap();
+
+        let result = discover_scripts(temp_dir.path()).unwrap();
+        assert_eq!(result.len(), 4);
+
+        // Check underscore handling
+        let example_underscore = result.iter().find(|s| s.name == "example_file").unwrap();
+        assert_eq!(example_underscore.category, "example_file");
+        assert_eq!(example_underscore.display_name, "Example File");
+
+        // Check hyphen handling
+        let example_hyphen = result.iter().find(|s| s.name == "example-file").unwrap();
+        assert_eq!(example_hyphen.category, "example-file");
+        assert_eq!(example_hyphen.display_name, "Example File");
+
+        // Check multiple underscores
+        let my_test = result.iter().find(|s| s.name == "my_test_script").unwrap();
+        assert_eq!(my_test.category, "my_test_script");
+        assert_eq!(my_test.display_name, "My Test Script");
+
+        // Check multiple hyphens
+        let another_test = result.iter().find(|s| s.name == "another-test-script").unwrap();
+        assert_eq!(another_test.category, "another-test-script");
+        assert_eq!(another_test.display_name, "Another Test Script");
+    }
+
+    #[test]
+    fn test_format_display_name() {
+        assert_eq!(format_display_name("example"), "Example");
+        assert_eq!(format_display_name("example_file"), "Example File");
+        assert_eq!(format_display_name("example-file"), "Example File");
+        assert_eq!(format_display_name("my_test_script"), "My Test Script");
+        assert_eq!(format_display_name("another-test-script"), "Another Test Script");
+        assert_eq!(format_display_name("🏠 homelab"), "🏠 Homelab");
+        assert_eq!(format_display_name("🛠️ utilities"), "🛠️ Utilities");
+        assert_eq!(format_display_name("UPPERCASE"), "Uppercase");
+        assert_eq!(format_display_name("mixed_CASE-example"), "Mixed Case Example");
     }
 }

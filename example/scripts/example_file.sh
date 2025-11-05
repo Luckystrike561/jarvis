@@ -1,18 +1,8 @@
 #!/usr/bin/env bash
 
 # Example script showing how to use Jarvis
-# This script will be automatically discovered by Jarvis
-
-# Define your functions in an array with format: "Display Name:function_name"
-# shellcheck disable=SC2034  # This array is used by Jarvis for function discovery
-example_functions=(
-	"Hello World:hello_world"
-	"System Info:show_system_info"
-	"Interactive Demo:interactive_demo"
-	"Long Output Test:long_output_test"
-)
-
-# Implement your functions below
+# All functions defined in this script will be automatically discovered
+# Function names will be formatted for display (e.g., hello_world -> "Hello World")
 hello_world() {
 	echo "👋 Hello from Jarvis!"
 	echo ""

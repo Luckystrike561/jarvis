@@ -4,15 +4,8 @@
 # This directory is gitignored, so you can add personal scripts here
 # without committing them to the repository
 
-# Define your functions in an array with format: "Display Name:function_name"
-# shellcheck disable=SC2034  # This array is used by Jarvis for function discovery
-example_functions=(
-	"Custom Hello:custom_hello"
-	"My Workflow:my_workflow"
-	"Personal Task:personal_task"
-)
-
-# Implement your custom functions below
+# All functions defined in this script will be automatically discovered
+# Function names will be formatted for display (e.g., custom_hello -> "Custom Hello")
 custom_hello() {
 	echo "👋 Hello from your personal jarvis/ directory!"
 	echo ""

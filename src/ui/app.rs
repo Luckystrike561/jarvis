@@ -1,4 +1,5 @@
 use crate::script::ScriptFunction;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[allow(dead_code)]
@@ -31,10 +32,12 @@ pub struct App {
     pub search_mode: bool,
     pub search_query: String,
     pub show_info: bool,
+    pub category_display_names: HashMap<String, String>,
+    pub project_title: String,
 }
 
 impl App {
-    pub fn new(functions: Vec<ScriptFunction>) -> Self {
+    pub fn new(functions: Vec<ScriptFunction>, project_title: String) -> Self {
         Self {
             state: AppState::MainMenu,
             functions,
@@ -48,7 +51,20 @@ impl App {
             search_mode: false,
             search_query: String::new(),
             show_info: false,
+            category_display_names: HashMap::new(),
+            project_title,
         }
+    }
+
+    pub fn set_category_display_names(&mut self, display_names: HashMap<String, String>) {
+        self.category_display_names = display_names;
+    }
+
+    pub fn get_category_display_name(&self, category: &str) -> String {
+        self.category_display_names
+            .get(category)
+            .cloned()
+            .unwrap_or_else(|| category.to_string())
     }
 
     pub fn toggle_focus(&mut self) {
@@ -287,18 +303,24 @@ mod tests {
                 display_name: "Function 1".to_string(),
                 category: "System".to_string(),
                 description: "Test function 1".to_string(),
+                emoji: None,
+                ignored: false,
             },
             ScriptFunction {
                 name: "func2".to_string(),
                 display_name: "Function 2".to_string(),
                 category: "System".to_string(),
                 description: "Test function 2".to_string(),
+                emoji: None,
+                ignored: false,
             },
             ScriptFunction {
                 name: "func3".to_string(),
                 display_name: "Function 3".to_string(),
                 category: "Utilities".to_string(),
                 description: "Test function 3".to_string(),
+                emoji: None,
+                ignored: false,
             },
         ]
     }
@@ -306,19 +328,20 @@ mod tests {
     #[test]
     fn test_app_new() {
         let functions = create_test_functions();
-        let app = App::new(functions.clone());
+        let app = App::new(functions.clone(), "Test".to_string());
 
         assert_eq!(app.functions.len(), 3);
         assert_eq!(app.selected_index, 0);
         assert!(!app.should_quit);
         assert!(!app.search_mode);
         assert_eq!(app.focus, FocusPane::ScriptList);
+        assert_eq!(app.project_title, "Test");
     }
 
     #[test]
     fn test_app_categories() {
         let functions = create_test_functions();
-        let app = App::new(functions);
+        let app = App::new(functions, "Test".to_string());
 
         let categories = app.categories();
         assert_eq!(categories.len(), 2);
@@ -329,7 +352,7 @@ mod tests {
     #[test]
     fn test_app_toggle_category() {
         let functions = create_test_functions();
-        let mut app = App::new(functions);
+        let mut app = App::new(functions, "Test".to_string());
 
         assert!(!app.is_category_expanded("System"));
         
@@ -343,7 +366,7 @@ mod tests {
     #[test]
     fn test_app_expand_collapse_category() {
         let functions = create_test_functions();
-        let mut app = App::new(functions);
+        let mut app = App::new(functions, "Test".to_string());
 
         app.expand_category("System");
         assert!(app.is_category_expanded("System"));
@@ -363,7 +386,7 @@ mod tests {
     #[test]
     fn test_app_navigation_next_previous() {
         let functions = create_test_functions();
-        let mut app = App::new(functions);
+        let mut app = App::new(functions, "Test".to_string());
 
         assert_eq!(app.selected_index, 0);
         
@@ -383,7 +406,7 @@ mod tests {
     #[test]
     fn test_app_toggle_focus() {
         let functions = create_test_functions();
-        let mut app = App::new(functions);
+        let mut app = App::new(functions, "Test".to_string());
 
         assert_eq!(app.focus, FocusPane::ScriptList);
         
@@ -397,7 +420,7 @@ mod tests {
     #[test]
     fn test_app_toggle_focus_with_output() {
         let functions = create_test_functions();
-        let mut app = App::new(functions);
+        let mut app = App::new(functions, "Test".to_string());
         
         // Add some output
         app.output.push("Test output".to_string());
@@ -417,7 +440,7 @@ mod tests {
     #[test]
     fn test_app_search_mode() {
         let functions = create_test_functions();
-        let mut app = App::new(functions);
+        let mut app = App::new(functions, "Test".to_string());
 
         assert!(!app.search_mode);
         assert_eq!(app.search_query, "");
@@ -443,7 +466,7 @@ mod tests {
     #[test]
     fn test_app_output_scroll() {
         let functions = create_test_functions();
-        let mut app = App::new(functions);
+        let mut app = App::new(functions, "Test".to_string());
 
         // Add multiple output lines
         for i in 0..10 {
@@ -475,7 +498,7 @@ mod tests {
     #[test]
     fn test_app_toggle_info() {
         let functions = create_test_functions();
-        let mut app = App::new(functions);
+        let mut app = App::new(functions, "Test".to_string());
 
         assert!(!app.show_info);
         
@@ -489,7 +512,7 @@ mod tests {
     #[test]
     fn test_app_tree_items_collapsed() {
         let functions = create_test_functions();
-        let app = App::new(functions);
+        let app = App::new(functions, "Test".to_string());
 
         let items = app.tree_items();
         // Should only show categories when collapsed
@@ -504,7 +527,7 @@ mod tests {
     #[test]
     fn test_app_tree_items_expanded() {
         let functions = create_test_functions();
-        let mut app = App::new(functions);
+        let mut app = App::new(functions, "Test".to_string());
 
         app.expand_category("System");
         
@@ -516,7 +539,7 @@ mod tests {
     #[test]
     fn test_app_selected_item() {
         let functions = create_test_functions();
-        let app = App::new(functions);
+        let app = App::new(functions, "Test".to_string());
 
         let item = app.selected_item();
         assert!(item.is_some());
@@ -530,7 +553,7 @@ mod tests {
     #[test]
     fn test_app_handle_left_right() {
         let functions = create_test_functions();
-        let mut app = App::new(functions);
+        let mut app = App::new(functions, "Test".to_string());
 
         // Initially not expanded
         assert!(!app.is_category_expanded("System"));
@@ -549,7 +572,7 @@ mod tests {
 
     #[test]
     fn test_app_empty_functions() {
-        let app = App::new(vec![]);
+        let app = App::new(vec![], "Test".to_string());
 
         assert_eq!(app.functions.len(), 0);
         assert_eq!(app.categories().len(), 0);
@@ -559,7 +582,7 @@ mod tests {
     #[test]
     fn test_app_search_filtering() {
         let functions = create_test_functions();
-        let mut app = App::new(functions);
+        let mut app = App::new(functions, "Test".to_string());
 
         app.enter_search_mode();
         app.search_push_char('f');

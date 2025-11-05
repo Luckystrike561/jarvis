@@ -42,18 +42,22 @@ Inspired by Tony Stark's legendary AI from Marvel, **Jarvis** is a powerful TUI 
 - **Smart search** to quickly find any function
 
 ### 🔍 **Auto-Discovery System**
-- Automatically scans and parses bash scripts in `scripts/` and `jarvis/` directories
-- Discovers function definitions without manual configuration
-- Organizes functions by category (System, Homelab, Utilities)
+- Automatically scans and parses bash scripts in your current directory and optional subdirectories
+- Discovers `.sh` files in: `./` (root), `./script/`, `./scripts/`, and `./jarvis/`
+- Discovers all bash function definitions without manual configuration
+- Auto-generates display names from function names (e.g., `my_function` → "My Function")
+- Organizes functions by script filename as category
 - Dynamic menu generation on every launch
-- `jarvis/` directory for user-specific custom scripts (gitignored by default)
+- Place scripts anywhere: root directory or in `script/`, `scripts/`, or `jarvis/` folders
 
 ### 🎯 **Universal Script Management**
 
-Jarvis works with **any** bash scripts you provide! Simply place your `.sh` files in the `scripts/` or `jarvis/` directory and define function arrays.
+Jarvis works with **any** bash scripts you provide! Simply place your `.sh` files in your project directory.
 
-- **`scripts/`** - Repository-tracked scripts (shared with team/community)
-- **`jarvis/`** - User-specific custom scripts (gitignored, for personal workflows)
+**Where to place scripts:**
+- **`./` (root directory)** - Scripts in your current directory are discovered
+- **`./script/` or `./scripts/`** - Optional subdirectories for organization
+- **`./jarvis/`** - Optional directory for Jarvis-specific scripts (can be gitignored)
 
 **Example Use Cases:**
 - 🖥️ **System Administration** - OS setup, package management, configuration
@@ -65,6 +69,8 @@ Jarvis works with **any** bash scripts you provide! Simply place your `.sh` file
 - 🎨 **Custom Automation** - Whatever workflow you need to automate!
 
 Jarvis doesn't care what your scripts do - it just makes them easy to discover, organize, and execute.
+
+**Note:** This repository uses `example/` as the test directory. Run `jarvis -p example` to test in this repo.
 
 ---
 
@@ -129,13 +135,7 @@ cd jarvis
 # Build the optimized binary
 cargo build --release
 
-# Create a scripts directory (if it doesn't exist)
-mkdir -p scripts
-
-# Add your bash scripts to the scripts/ directory
-# See "Adding Scripts" section below
-
-# Run Jarvis
+# Run Jarvis (it will discover scripts in current directory)
 ./target/release/jarvis
 ```
 
@@ -153,11 +153,12 @@ sudo cp target/release/jarvis /usr/local/bin/
 cargo build --release
 sudo cp target/release/jarvis /usr/local/bin/
 
-# Run from anywhere (ensure you run from a directory with a scripts/ folder)
-jarvis
+# Run from anywhere
+jarvis                    # Searches current directory and optional subdirectories
+jarvis --path ~/projects  # Searches in specified directory
 ```
 
-**Note:** Jarvis looks for `scripts/` and/or `jarvis/` directories in your current working directory. At least one must exist to run Jarvis.
+**Note:** Jarvis looks for `.sh` script files in your current working directory and optional subdirectories (`script/`, `scripts/`, `jarvis/`) by default, or in the directory specified with `--path`. For this repository, use `jarvis -p example` to test the example scripts.
 
 ---
 
@@ -166,11 +167,16 @@ jarvis
 ### Running Jarvis
 
 ```bash
-# From the jarvis directory
+# From the jarvis directory (uses current directory)
 ./target/release/jarvis
 
-# Or if installed system-wide (must be in a directory with scripts/ and/or jarvis/)
-jarvis
+# Specify a custom directory to search for scripts
+./target/release/jarvis --path /path/to/project
+
+# Or if installed system-wide
+jarvis                      # Uses current directory
+jarvis --path ~/projects    # Uses specified directory
+jarvis -p /opt/scripts      # Short form
 ```
 
 ### Keyboard Navigation
@@ -182,7 +188,7 @@ jarvis
 
 ### Workflow
 
-1. **Launch Jarvis** - It auto-discovers all bash scripts in `scripts/` and `jarvis/`
+1. **Launch Jarvis** - It auto-discovers all bash scripts in your directory
 2. **Select Category** - Choose from automatically detected categories
 3. **Select Function** - Pick the function you want to execute
 4. **Execute** - Jarvis exits TUI mode and runs your script with full terminal access
@@ -207,10 +213,11 @@ jarvis/
 │       ├── app.rs         # Application state and event handling
 │       ├── render.rs      # UI rendering logic
 │       └── mod.rs         # Module exports
-├── scripts/               # Repository bash scripts (tracked in git)
-│   └── (add your .sh files)
-├── jarvis/                # User-specific custom scripts (gitignored)
-│   └── (your personal .sh files)
+├── example/               # Example scripts for testing this repo
+│   ├── scripts/          # Repository bash scripts (tracked in git)
+│   │   └── (add your .sh files)
+│   └── jarvis/           # User-specific custom scripts (gitignored)
+│       └── (your personal .sh files)
 ├── Cargo.toml            # Rust project dependencies
 ├── README.md             # This file
 └── LICENSE               # MIT License
@@ -229,24 +236,19 @@ jarvis/
 
 ## 🔧 Adding Your Own Scripts
 
-Jarvis automatically discovers functions from your bash scripts using a simple convention.
+Jarvis automatically discovers all bash functions from your scripts. Just define functions and they'll appear in the TUI!
 
 ### Step 1: Create a Script File
 
-Create a `.sh` file in either the `scripts/` directory (for tracked/shared scripts) or `jarvis/` directory (for personal scripts):
+Create a `.sh` file in your project directory (or in optional `script/`, `scripts/`, or `jarvis/` subdirectories):
 
 ```bash
-# scripts/myproject.sh  (or jarvis/myproject.sh for personal scripts)
+# myproject.sh  (place in current directory or subdirectories)
 #!/usr/bin/env bash
 
-# Define a function array with format: "Display Name:function_name"
-myproject_functions=(
-    "Deploy Application:deploy_app"
-    "Run Tests:run_tests"
-    "Backup Database:backup_db"
-)
+# All functions are automatically discovered by Jarvis
+# Function names are formatted for display (e.g., deploy_app -> "Deploy App")
 
-# Implement your functions
 deploy_app() {
     echo "🚀 Deploying application..."
     # Your deployment logic here
@@ -265,33 +267,96 @@ backup_db() {
 
 ### Step 2: Run Jarvis
 
-That's it! Your functions will automatically appear in the TUI under a new category based on your script filename.
+That's it! Your functions will automatically appear in the TUI under a category based on your script filename (e.g., `myproject.sh` → "Myproject" category).
 
 ### Category Mapping
 
-Jarvis automatically categorizes scripts based on filename:
+Jarvis automatically creates categories based on script filenames:
 
-| Filename | Category |
-|----------|----------|
-| `fedora.sh` | System Management |
-| `homelab.sh` | Homelab Operations |
-| `util.sh` | Utilities |
-| `anything.sh` | Other |
+| Filename | Category Display |
+|----------|------------------|
+| `example_file.sh` | Example File |
+| `my_scripts.sh` | My Scripts |
+| `homelab-setup.sh` | Homelab Setup |
+| `anything.sh` | Anything |
 
-You can customize category mapping in `src/script/discovery.rs`.
+Display names are auto-generated with proper capitalization and spacing.
 
 ### Script Format Requirements
 
-1. **Function Array**: Define `<name>_functions=()` array with entries in format `"Display:function"`
-2. **Bash Functions**: Implement the functions referenced in your array
-3. **Shell**: Must be valid bash scripts with `.sh` extension
+1. **Bash Functions**: Simply define bash functions in your `.sh` files
+2. **Shell**: Must be valid bash scripts with `.sh` extension
+3. **Function Names**: Use valid bash identifiers (letters, numbers, underscores)
+
+### Customizing Function Display
+
+You can customize how functions appear in Jarvis using special comment annotations above your function definitions:
+
+```bash
+#!/usr/bin/env bash
+
+# @emoji 🚀
+# @description Deploy the application to production environment
+deploy_to_production() {
+    echo "Deploying to production..."
+    # Your deployment logic here
+}
+
+# @description Run the full test suite with coverage reports
+run_tests() {
+    echo "Running tests..."
+    # Your test commands here
+}
+
+# @emoji 💾
+backup_database() {
+    echo "Backing up database..."
+    # Your backup logic here
+}
+
+# @ignore
+format_string() {
+    # Utility function - hidden from TUI
+    echo "$1" | tr '[:lower:]' '[:upper:]'
+}
+```
+
+**Available Annotations:**
+
+- **`@emoji`** - Add an emoji prefix that appears before the function name in the TUI
+- **`@description`** - Provide a custom description shown in the details panel (replaces the default "Execute: function_name")
+- **`@ignore`** - Hide utility/helper functions from the TUI (useful for internal functions not meant to be called directly)
+
+**Annotation Rules:**
+
+- Place annotations in comments directly above the function definition
+- Annotations must be on consecutive comment lines (no blank lines between them and the function)
+- You can use multiple annotations together, or just one
+- If no annotations are provided, Jarvis uses auto-generated defaults
+- Functions marked with `@ignore` are parsed but filtered out from the TUI display
+
+**Example Output in TUI:**
+
+Without annotations:
+```
+  Deploy To Production
+```
+
+With emoji:
+```
+  🚀 Deploy To Production
+```
+
+See `example/jarvis/annotations_demo.sh` for a complete demonstration of all annotation combinations.
 
 ### Tips
 
-- Use `snake_case` for function names
-- Provide clear, descriptive display names
-- Use emoji prefixes for visual feedback (✅ ❌ 🚀 🔧 📦)
-- Group related functionality in the same script
+- Use `snake_case` for function names (e.g., `deploy_production`, `backup_database`)
+- Function names are automatically formatted: `my_cool_function` becomes "My Cool Function"
+- Add emoji annotations to make functions visually distinctive in the TUI
+- Use custom descriptions to provide clear context about what each function does
+- Use emoji prefixes in echo output for visual feedback (✅ ❌ 🚀 🔧 📦)
+- Group related functionality in the same script file
 - Scripts can use interactive tools like `gum`, `fzf`, `dialog`, etc.
 
 ---
@@ -300,9 +365,9 @@ You can customize category mapping in `src/script/discovery.rs`.
 
 Jarvis was originally built for the **Shield** homelab ecosystem, which demonstrates its capabilities:
 
-- **System Management** (`scripts/fedora.sh`) - Complete laptop setup, package installation, dotfiles sync
-- **Homelab Operations** (`scripts/homelab.sh`) - K3S cluster management, ArgoCD, Kubernetes resources
-- **Utilities** (`scripts/util.sh`) - S.M.A.R.T. diagnostics, VPN management, system monitoring
+- **System Management** (`fedora.sh`) - Complete laptop setup, package installation, dotfiles sync
+- **Homelab Operations** (`homelab.sh`) - K3S cluster management, ArgoCD, Kubernetes resources
+- **Utilities** (`util.sh`) - S.M.A.R.T. diagnostics, VPN management, system monitoring
 
 But Jarvis is **not limited** to this use case - it's a general-purpose tool that works with any bash scripts you throw at it!
 
