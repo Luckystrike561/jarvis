@@ -33,7 +33,7 @@ impl EventReader for CrosstermEventReader {
 #[derive(Parser, Debug)]
 #[command(name = "jarvis")]
 #[command(author = "Luckystrike561")]
-#[command(version = "0.1.0")]
+#[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(about = "Your trusted AI assistant for automating scripts", long_about = None)]
 struct Args {
     /// Path to the base directory to search for bash scripts
