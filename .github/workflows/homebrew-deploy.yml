@@ -1,0 +1,37 @@
+name: Deploy to Homebrew
+
+on:
+  release:
+    types:
+      - published
+
+jobs:
+  update-formula:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: homebrew-formula
+          
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+      - name: Update Homebrew formula
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          bash scripts/update-formula.sh
+          
+      - name: Commit and push changes
+        run: |
+          git add homebrew/jarvis.rb
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: update Homebrew formula to ${{ github.event.release.tag_name }}"
+            git push origin homebrew-formula
+          fi
