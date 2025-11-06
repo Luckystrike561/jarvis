@@ -27,7 +27,7 @@ devbox run release  # Build optimized binary
 - Bash (for script execution)
 - shellcheck (bash linting)
 - shfmt (bash formatting)
-- fzf (for script features)
+- Node.js/npm (for npm script execution)
 
 ## Core Principles
 
@@ -91,34 +91,49 @@ pub fn execute_function_interactive(
 
 ### Bash Scripts
 
+**Jarvis uses auto-discovery** - all bash functions in `.sh` files are automatically detected. No arrays or special declarations needed!
+
 **Format Requirements:**
 ```bash
 #!/usr/bin/env bash
 
-# Define function array with format: "Display Name:function_name"
-example_functions=(
-    "Deploy Application:deploy_app"
-    "Run Tests:run_tests"
-)
-
-# Function implementations
+# Optional: Customize function display with annotations
+# @emoji 🚀
+# @description Deploy the application to production
 deploy_app() {
-    echo "🚀 Deploying application..."
+    echo "Deploying application..."
     # Implementation
+}
+
+# Optional: Hide helper functions from TUI
+# @ignore
+_internal_helper() {
+    echo "This won't appear in Jarvis"
+}
+
+# Regular functions appear automatically
+run_tests() {
+    echo "Running tests..."
 }
 ```
 
+**Function Annotations:**
+- `@emoji <emoji>` - Add emoji prefix before function name
+- `@description <text>` - Custom description for details panel
+- `@ignore` - Hide utility/helper functions from TUI
+- Place annotations in comments directly above function (consecutive comment lines only)
+
 **Naming:**
-- Functions: `snake_case`
-- Arrays: `<category>_functions`
+- Functions: `snake_case` (auto-converted to "Title Case" in UI)
 - Variables: `snake_case`
 - Constants: `ALL_CAPS`
 
 **Best Practices:**
-- Use emoji prefixes for visual feedback (✅ ❌ 🚀 🔧 📦 🧪)
-- Check command availability before use
-- Provide clear error messages
+- Functions are auto-discovered - no arrays needed
+- Use annotations to customize display (`@emoji`, `@description`)
+- Hide helper functions with `@ignore`
 - Support interactive tools (gum, fzf, dialog)
+- Provide clear error messages
 
 ## Project Structure
 
@@ -127,47 +142,101 @@ jarvis/
 ├── src/
 │   ├── main.rs           # Application entry, terminal setup, event loop
 │   ├── script/
-│   │   ├── discovery.rs  # Find .sh files, map to categories
-│   │   ├── parser.rs     # Parse function arrays with regex
+│   │   ├── discovery.rs  # Find .sh files and package.json, map to categories
+│   │   ├── parser.rs     # Parse bash functions with regex
+│   │   ├── npm_parser.rs # Parse package.json scripts
 │   │   ├── executor.rs   # Execute with full terminal access
 │   │   └── mod.rs        # Module exports
 │   └── ui/
 │       ├── app.rs        # App state, navigation logic
 │       ├── render.rs     # Ratatui rendering logic
 │       └── mod.rs        # Module exports
-└── scripts/              # User's bash scripts
+├── example/              # Example scripts and projects for testing
+│   ├── jarvis/           # Bash script examples
+│   ├── node/             # npm/package.json example
+│   └── scripts/          # Additional bash examples
+└── scripts/              # User's bash scripts (scanned at CWD)
 ```
 
 ## Key Patterns
 
 ### Script Discovery
+
+Jarvis automatically discovers:
+1. **Bash scripts** in `.sh` files (current directory + optional subdirectories)
+2. **npm scripts** in `package.json` files
+
 ```rust
-// Always scan scripts/ directory relative to CWD
-let scripts_dir = std::env::current_dir()?.join("scripts");
+// Scan current directory and optional subdirectories
+let search_paths = vec![
+    base_path.to_path_buf(),           // ./
+    base_path.join("script"),          // ./script/
+    base_path.join("scripts"),         // ./scripts/
+    base_path.join("jarvis"),          // ./jarvis/
+];
 
-// Filter for .sh files only
-if extension == "sh" { }
+// Discovery depths
+// Root directory: depth 1 (immediate files only)
+// Subdirectories: depth 2 (recursive search)
 
-// Map filename to category (customize in discovery.rs)
+// Filter for .sh files and package.json
+if extension == "sh" || file_name == "package.json" { }
+
+// Map to categories
 let category = match name.as_str() {
     "fedora" => "System Management",
+    "package.json" => "npm Scripts",
     _ => "Other",
 };
 ```
 
-### Script Parsing
-```rust
-// Look for arrays: `name_functions=("Display:function" ...)`
-let array_re = Regex::new(r#"(\w+_functions)=\(\s*([^)]+)\s*\)"#)?;
+### Bash Function Parsing
 
-// Parse items: "Display Name:function_name"
-let item_re = Regex::new(r#""([^:]+):([^"]+)""#)?;
+Auto-discovers all bash functions - no arrays needed!
+
+```rust
+// Find bash functions with regex
+let function_re = Regex::new(r"^(\w+)\s*\(\)\s*\{")?;
+
+// Parse annotations (@emoji, @description, @ignore)
+let emoji_re = Regex::new(r"#\s*@emoji\s+(.+)")?;
+let desc_re = Regex::new(r"#\s*@description\s+(.+)")?;
+let ignore_re = Regex::new(r"#\s*@ignore")?;
+
+// Convert function_name to "Function Name" for display
+```
+
+### npm Script Parsing
+
+```rust
+// Parse package.json with serde_json
+let package_json: serde_json::Value = serde_json::from_str(&content)?;
+
+// Extract scripts section
+if let Some(scripts) = package_json.get("scripts") {
+    // Each script becomes a ScriptFunction
+}
 ```
 
 ### Interactive Execution
+
+**Bash Functions:**
 ```rust
 // IMPORTANT: Always inherit stdio for interactive scripts
 Command::new("bash")
+    .args(["-c", &format!("source {} && {}", script_path, function_name)])
+    .stdin(Stdio::inherit())
+    .stdout(Stdio::inherit())
+    .stderr(Stdio::inherit())
+    .status()?;
+```
+
+**npm Scripts:**
+```rust
+// Execute npm scripts in package.json directory
+Command::new("npm")
+    .args(["run", script_name])
+    .current_dir(package_dir)
     .stdin(Stdio::inherit())
     .stdout(Stdio::inherit())
     .stderr(Stdio::inherit())
@@ -196,13 +265,13 @@ pub enum AppState {
 **Feature Ideas (Welcome PRs):**
 - [ ] Fuzzy search/filter (press `/` to search)
 - [ ] Custom category mapping via config file
-- [ ] Parse script comments for descriptions (`# @description: ...`)
 - [ ] Favorites/starred functions
 - [ ] Execution history
-- [ ] Multi-line function array parsing
 - [ ] Script validation on discovery
 - [ ] Keyboard shortcuts customization
 - [ ] Theme support (Catppuccin, Nord, etc.)
+- [ ] Support for more package managers (pnpm, yarn, bun)
+- [ ] Parse JSDoc-style comments for npm script descriptions
 
 ### Testing Approach
 

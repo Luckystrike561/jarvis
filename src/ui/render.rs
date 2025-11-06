@@ -7,7 +7,7 @@ use ratatui::{
     Frame,
 };
 
-pub fn render(frame: &mut Frame, app: &App) {
+pub fn render(frame: &mut Frame, app: &mut App) {
     // Main layout: Header + (optional Search) + Body + Footer
     let main_constraints = if app.search_mode {
         vec![
@@ -105,13 +105,27 @@ fn render_search_bar(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(search_widget, area);
 }
 
-fn render_script_tree(frame: &mut Frame, app: &App, area: Rect) {
-    let items: Vec<ListItem> = app
-        .tree_items()
+fn render_script_tree(frame: &mut Frame, app: &mut App, area: Rect) {
+    let tree_items = app.tree_items();
+    let total_items = tree_items.len();
+
+    // Calculate visible viewport height (subtract 2 for borders)
+    let visible_height = area.height.saturating_sub(2) as usize;
+
+    // Ensure the selected item is visible
+    app.ensure_selected_visible(visible_height);
+
+    // Calculate the scrolled window
+    let start_idx = app.script_scroll;
+    let end_idx = (start_idx + visible_height).min(total_items);
+
+    // Only render items within the visible window
+    let items: Vec<ListItem> = tree_items[start_idx..end_idx]
         .iter()
         .enumerate()
-        .map(|(i, item)| {
-            let is_selected = i == app.selected_index;
+        .map(|(visible_i, item)| {
+            let actual_i = start_idx + visible_i;
+            let is_selected = actual_i == app.selected_index;
             let style = if is_selected {
                 Style::default()
                     .fg(Color::Black)
@@ -149,11 +163,23 @@ fn render_script_tree(frame: &mut Frame, app: &App, area: Rect) {
         Color::Gray
     };
 
+    // Create title with scroll position indicator if needed
+    let title = if total_items > visible_height {
+        format!(
+            "🤖 {} [{}/{}]",
+            app.project_title,
+            start_idx + 1,
+            total_items
+        )
+    } else {
+        format!("🤖 {}", app.project_title)
+    };
+
     let list = List::new(items)
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title(format!("🤖 {}", app.project_title))
+                .title(title)
                 .border_style(Style::default().fg(border_color)),
         )
         .style(Style::default().fg(Color::White));

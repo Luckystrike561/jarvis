@@ -26,6 +26,7 @@ pub struct App {
     pub category_filter: Option<String>,
     pub output: Vec<String>,
     pub output_scroll: usize,
+    pub script_scroll: usize,
     pub should_quit: bool,
     pub focus: FocusPane,
     pub expanded_categories: Vec<String>,
@@ -45,6 +46,7 @@ impl App {
             category_filter: None,
             output: Vec::new(),
             output_scroll: 0,
+            script_scroll: 0,
             should_quit: false,
             focus: FocusPane::ScriptList,
             expanded_categories: Vec::new(),
@@ -208,22 +210,26 @@ impl App {
         self.search_mode = true;
         self.search_query.clear();
         self.selected_index = 0;
+        self.reset_script_scroll();
     }
 
     pub fn exit_search_mode(&mut self) {
         self.search_mode = false;
         self.search_query.clear();
         self.selected_index = 0;
+        self.reset_script_scroll();
     }
 
     pub fn search_push_char(&mut self, c: char) {
         self.search_query.push(c);
         self.selected_index = 0; // Reset selection when search changes
+        self.reset_script_scroll();
     }
 
     pub fn search_pop_char(&mut self) {
         self.search_query.pop();
         self.selected_index = 0; // Reset selection when search changes
+        self.reset_script_scroll();
     }
 
     pub fn selected_item(&self) -> Option<TreeItem> {
@@ -249,6 +255,29 @@ impl App {
                 self.selected_index = item_count - 1;
             }
         }
+    }
+
+    /// Ensure the selected item is visible within the scrolled viewport
+    pub fn ensure_selected_visible(&mut self, visible_height: usize) {
+        let item_count = self.tree_items().len();
+
+        if item_count == 0 {
+            return;
+        }
+
+        // If selected item is above the scroll window, scroll up
+        if self.selected_index < self.script_scroll {
+            self.script_scroll = self.selected_index;
+        }
+
+        // If selected item is below the scroll window, scroll down
+        if self.selected_index >= self.script_scroll + visible_height {
+            self.script_scroll = self.selected_index.saturating_sub(visible_height - 1);
+        }
+    }
+
+    pub fn reset_script_scroll(&mut self) {
+        self.script_scroll = 0;
     }
 
     #[allow(dead_code)]
