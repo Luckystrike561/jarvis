@@ -1,11 +1,11 @@
 {
   "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.16.0/.schema/devbox.schema.json",
   "packages": [
-    "cargo@latest",
-    "rustc@latest",
-    "rustfmt@latest",
-    "clippy@latest",
-    "rustup@latest"
+    "cargo@1.89.0",
+    "rustc@1.89.0",
+    "rustfmt@1.89.0",
+    "clippy@1.89.0",
+    "rustup@1.28.2"
   ],
   "shell": {
     "init_hook": [
