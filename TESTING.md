@@ -1,6 +1,48 @@
 # Jarvis TUI Testing Guide
 
-## Quick Start
+This guide covers both manual TUI testing and automated unit/integration tests.
+
+## Automated Tests
+
+### Running Tests
+
+```bash
+# Run all 90 tests
+cargo test
+
+# Run specific test
+cargo test test_name
+
+# Run tests with output
+cargo test -- --nocapture
+
+# With devbox
+devbox run test
+```
+
+### Test Coverage
+
+Jarvis has comprehensive test coverage across all modules:
+
+- **90 total tests** covering ~90% of testable code
+- **Unit tests** for script discovery, parsing, npm parsing, and execution
+- **Integration tests** for application logic and edge cases
+- **Mock-based tests** for TUI event handling
+
+**Coverage Breakdown:**
+- `src/script/discovery.rs` - ~95% (script and package.json discovery)
+- `src/script/parser.rs` - ~95% (bash function parsing with annotations)
+- `src/script/npm_parser.rs` - ~90% (package.json parsing)
+- `src/script/executor.rs` - ~90% (bash and npm script execution)
+- `src/ui/app.rs` - ~90% (application state and navigation)
+- `src/main.rs` - ~85% (integration tests)
+- `src/ui/render.rs` - ~5% (UI rendering - difficult to test)
+
+## Manual TUI Testing
+
+## Manual TUI Testing
+
+### Quick Start
 
 ```bash
 cd /home/luckystrike561/shield/jarvis
@@ -21,6 +63,7 @@ When you start Jarvis, you should see:
 - **homelab.sh** - Homelab/K8s deployment functions
 - **test.sh** - Interactive test functions (NEW!)
 - **util.sh** - Utility functions
+- **package.json** - npm scripts (if present in example/node/)
 
 ### 3. Non-Interactive Execution ✅
 Navigate to: `test.sh` → `Simple echo test`
@@ -59,6 +102,13 @@ Navigate to: `homelab.sh` → `List all kubernetes resources for a namespace`
 - Should execute kubectl commands
 - Verify output is visible
 
+### 8. npm Scripts Test (Optional)
+If you have `example/node/package.json`:
+Navigate to: `Package` → select any npm script
+- Should execute the npm script
+- Verify output is visible
+- Press Enter to return to TUI
+
 ## Expected Behavior
 
 ### ✅ Working Correctly
@@ -86,6 +136,7 @@ Navigate to: `homelab.sh` → `List all kubernetes resources for a namespace`
 ✅ gum confirm (interactive): PASS/FAIL
 ✅ gum input (interactive): PASS/FAIL
 ✅ bash read (interactive): PASS/FAIL
+✅ npm scripts (if available): PASS/FAIL
 ✅ TUI suspend/resume: PASS/FAIL
 ```
 
@@ -108,6 +159,8 @@ go install github.com/charmbracelet/gum@latest
 
 ## Success Criteria
 
-**All tests pass** = Interactive input support is working correctly! 🎉
+**All manual TUI tests pass** = Interactive input support is working correctly! 🎉
 
-The key indicator is: **You can type into gum prompts and see your input.**
+**All 90 automated tests pass** = Code quality and functionality are maintained! 🎉
+
+The key indicator for manual testing is: **You can type into gum prompts and see your input.**

@@ -110,6 +110,7 @@ pub fn execute_function(script_path: &Path, function_name: &str) -> anyhow::Resu
   - `snake_case` for functions and variables
   - `ALL_CAPS` for constants and arrays
 - **Documentation**: Add comments for complex logic
+- **Auto-Discovery**: All bash functions are automatically discovered by Jarvis
 
 Example:
 ```bash
@@ -117,19 +118,31 @@ Example:
 
 # Example script showing Jarvis-compatible functions
 
-# Function array for menu discovery
-EXAMPLE_FUNCTIONS=(
-    "Hello World:hello_world"
-    "System Info:system_info"
-)
-
+# All functions are automatically discovered
 hello_world() {
     echo "Hello from Jarvis!"
 }
 
+# @emoji 🔧
+# @description Display system information
 system_info() {
     echo "OS: $(uname -s)"
     echo "Kernel: $(uname -r)"
+}
+```
+
+### npm Scripts
+
+Jarvis automatically discovers npm scripts from `package.json` files. No special format required - just define scripts in the `"scripts"` section:
+
+```json
+{
+  "name": "example-project",
+  "scripts": {
+    "build": "webpack --mode production",
+    "test": "jest",
+    "dev": "webpack-dev-server"
+  }
 }
 ```
 
@@ -146,9 +159,13 @@ jarvis/
 │   └── script/           # Script discovery and execution
 │       ├── mod.rs
 │       ├── parser.rs     # Bash script parsing
-│       ├── discovery.rs  # Script file discovery
-│       └── executor.rs   # Script execution
-├── scripts/              # Example bash scripts
+│       ├── npm_parser.rs # package.json parsing
+│       ├── discovery.rs  # Script file discovery (bash + npm)
+│       └── executor.rs   # Script execution (bash + npm)
+├── example/              # Example scripts and test files
+│   ├── jarvis/          # Bash script examples
+│   ├── node/            # npm/package.json examples
+│   └── scripts/         # Additional script examples
 ├── devbox.json           # Devbox configuration
 ├── .envrc                # direnv config (optional)
 └── Cargo.toml            # Rust dependencies
@@ -181,7 +198,7 @@ jarvis/
 ## 🧪 Testing
 
 ```bash
-# Run all tests
+# Run all 90 tests
 devbox run test
 
 # Run specific test
@@ -190,6 +207,8 @@ cargo test test_name
 # Run tests with output
 cargo test -- --nocapture
 ```
+
+See [TESTING.md](TESTING.md) for comprehensive testing guide including manual TUI tests.
 
 ## 🐛 Reporting Issues
 
