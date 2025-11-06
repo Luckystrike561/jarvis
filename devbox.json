@@ -19,6 +19,7 @@
       "echo '  devbox run test     - Run all tests'",
       "echo '  devbox run release  - Build optimized release binary'",
       "echo '  devbox run install  - Install Jarvis locally to ~/.local/bin'",
+      "echo '  devbox run deploy-homebrew - Update Homebrew formula with latest release'",
       "echo ''"
     ],
     "scripts": {
@@ -51,6 +52,9 @@
         "echo ''",
         "echo 'Make sure ~/.local/bin is in your PATH:'",
         "echo '  export PATH=\"$HOME/.local/bin:$PATH\"'"
+      ],
+      "deploy-homebrew": [
+        "bash scripts/update-formula.sh"
       ]
     }
   }
