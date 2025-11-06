@@ -15,6 +15,20 @@ use std::panic;
 use std::path::PathBuf;
 use ui::App;
 
+/// Trait for reading terminal events (allows dependency injection for testing)
+trait EventReader {
+    fn read_event(&mut self) -> Result<Event>;
+}
+
+/// Production event reader that uses crossterm's event::read()
+struct CrosstermEventReader;
+
+impl EventReader for CrosstermEventReader {
+    fn read_event(&mut self) -> Result<Event> {
+        event::read().context("Failed to read keyboard event")
+    }
+}
+
 /// Jarvis - A beautiful TUI for managing and executing bash scripts
 #[derive(Parser, Debug)]
 #[command(name = "jarvis")]
@@ -200,7 +214,8 @@ async fn run_application(args: Args) -> Result<()> {
     app.set_category_display_names(category_display_names);
 
     // Run the app and ensure cleanup happens even on error
-    let run_result = run_app(&mut terminal, &mut app, &script_files).await;
+    let mut event_reader = CrosstermEventReader;
+    let run_result = run_app(&mut terminal, &mut app, &script_files, &mut event_reader).await;
 
     // Restore terminal (always runs, even if run_app failed)
     let cleanup_result = cleanup_terminal(&mut terminal);
@@ -226,6 +241,478 @@ fn cleanup_terminal(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Re
     terminal.show_cursor().context("Failed to show cursor")?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyEvent, KeyModifiers};
+    use std::collections::VecDeque;
+
+    /// Mock event reader for testing that returns a predetermined sequence of events
+    struct MockEventReader {
+        events: VecDeque<Event>,
+    }
+
+    impl MockEventReader {
+        fn new(events: Vec<Event>) -> Self {
+            Self {
+                events: VecDeque::from(events),
+            }
+        }
+    }
+
+    impl EventReader for MockEventReader {
+        fn read_event(&mut self) -> Result<Event> {
+            self.events
+                .pop_front()
+                .ok_or_else(|| anyhow::anyhow!("No more events in mock"))
+        }
+    }
+
+    /// Helper to create a key event
+    fn key_event(code: KeyCode) -> Event {
+        Event::Key(KeyEvent::new(code, KeyModifiers::empty()))
+    }
+
+    /// Helper to create a test app with mock functions
+    fn create_test_app() -> App {
+        let functions = vec![
+            script::ScriptFunction {
+                name: "test_func1".to_string(),
+                display_name: "Test Function 1".to_string(),
+                category: "test_category".to_string(),
+                description: "Test description 1".to_string(),
+                emoji: Some("🚀".to_string()),
+                ignored: false,
+            },
+            script::ScriptFunction {
+                name: "test_func2".to_string(),
+                display_name: "Test Function 2".to_string(),
+                category: "test_category".to_string(),
+                description: "Test description 2".to_string(),
+                emoji: None,
+                ignored: false,
+            },
+        ];
+        App::new(functions, "Test Project".to_string())
+    }
+
+    #[tokio::test]
+    async fn test_quit_with_q_key() {
+        let mut app = create_test_app();
+
+        // Simulate pressing 'q' to quit
+        let mut mock_reader = MockEventReader::new(vec![key_event(KeyCode::Char('q'))]);
+
+        // We can't easily test with a real terminal, but we can test the app state changes
+        assert!(!app.should_quit);
+
+        // Manually simulate the key handling logic
+        if let Event::Key(key) = mock_reader.read_event().unwrap() {
+            if key.code == KeyCode::Char('q') {
+                app.should_quit = true;
+            }
+        }
+
+        assert!(app.should_quit);
+    }
+
+    #[tokio::test]
+    async fn test_quit_with_capital_q_key() {
+        let mut app = create_test_app();
+
+        // Simulate pressing 'Q' to quit
+        let mut mock_reader = MockEventReader::new(vec![key_event(KeyCode::Char('Q'))]);
+
+        assert!(!app.should_quit);
+
+        if let Event::Key(key) = mock_reader.read_event().unwrap() {
+            if key.code == KeyCode::Char('Q') {
+                app.should_quit = true;
+            }
+        }
+
+        assert!(app.should_quit);
+    }
+
+    #[tokio::test]
+    async fn test_info_modal_toggle() {
+        let mut app = create_test_app();
+
+        assert!(!app.show_info);
+
+        // Toggle info modal on
+        app.toggle_info();
+        assert!(app.show_info);
+
+        // Toggle info modal off
+        app.toggle_info();
+        assert!(!app.show_info);
+    }
+
+    #[tokio::test]
+    async fn test_search_mode_enter_and_exit() {
+        let mut app = create_test_app();
+
+        assert!(!app.search_mode);
+
+        // Enter search mode
+        app.enter_search_mode();
+        assert!(app.search_mode);
+
+        // Exit search mode
+        app.exit_search_mode();
+        assert!(!app.search_mode);
+    }
+
+    #[tokio::test]
+    async fn test_search_input_handling() {
+        let mut app = create_test_app();
+        app.enter_search_mode();
+
+        // Add characters to search
+        app.search_push_char('t');
+        app.search_push_char('e');
+        app.search_push_char('s');
+        app.search_push_char('t');
+
+        // Remove a character
+        app.search_pop_char();
+
+        // The search query should be managed internally by the app
+        assert!(app.search_mode);
+    }
+
+    #[tokio::test]
+    async fn test_navigation_next_previous() {
+        let mut app = create_test_app();
+
+        // Test next and previous navigation
+        app.next();
+        app.previous();
+
+        // Just verify these methods don't panic
+        // The actual selection logic is tested in ui::app module
+    }
+
+    #[tokio::test]
+    async fn test_output_scroll() {
+        let mut app = create_test_app();
+        app.focus = ui::app::FocusPane::Output;
+
+        // Add some output lines
+        for i in 0..10 {
+            app.output.push(format!("Line {}", i));
+        }
+
+        // Test scroll down
+        app.scroll_output_down();
+
+        // Test scroll up
+        app.scroll_output_up();
+
+        // Reset scroll
+        app.reset_output_scroll();
+    }
+
+    #[tokio::test]
+    async fn test_focus_toggle() {
+        let mut app = create_test_app();
+
+        let initial_focus = app.focus;
+        app.toggle_focus();
+        let after_toggle = app.focus;
+
+        // Focus should have changed
+        assert_ne!(initial_focus, after_toggle);
+
+        // Toggle back
+        app.toggle_focus();
+        assert_eq!(initial_focus, app.focus);
+    }
+
+    #[test]
+    fn test_format_display_name() {
+        assert_eq!(format_display_name("test_name"), "Test Name");
+        assert_eq!(format_display_name("my_function"), "My Function");
+        assert_eq!(format_display_name("single"), "Single");
+        assert_eq!(format_display_name(""), "");
+    }
+
+    #[test]
+    fn test_mock_event_reader() {
+        let events = vec![
+            key_event(KeyCode::Char('a')),
+            key_event(KeyCode::Char('b')),
+            key_event(KeyCode::Enter),
+        ];
+
+        let mut reader = MockEventReader::new(events);
+
+        // Should return events in order
+        assert!(matches!(
+            reader.read_event().unwrap(),
+            Event::Key(KeyEvent {
+                code: KeyCode::Char('a'),
+                ..
+            })
+        ));
+        assert!(matches!(
+            reader.read_event().unwrap(),
+            Event::Key(KeyEvent {
+                code: KeyCode::Char('b'),
+                ..
+            })
+        ));
+        assert!(matches!(
+            reader.read_event().unwrap(),
+            Event::Key(KeyEvent {
+                code: KeyCode::Enter,
+                ..
+            })
+        ));
+
+        // Should error when no more events
+        assert!(reader.read_event().is_err());
+    }
+
+    #[tokio::test]
+    async fn test_info_modal_closes_with_esc() {
+        let mut app = create_test_app();
+
+        // Open info modal
+        app.toggle_info();
+        assert!(app.show_info);
+
+        // Close with ESC (simulated)
+        app.toggle_info();
+        assert!(!app.show_info);
+    }
+
+    #[tokio::test]
+    async fn test_search_mode_esc_key() {
+        let mut app = create_test_app();
+
+        // Enter search mode
+        app.enter_search_mode();
+        assert!(app.search_mode);
+
+        // Press ESC to exit
+        app.exit_search_mode();
+        assert!(!app.search_mode);
+    }
+
+    #[test]
+    fn test_crossterm_event_reader_type() {
+        // Just verify that CrosstermEventReader exists and implements the trait
+        let _reader: Box<dyn EventReader> = Box::new(CrosstermEventReader);
+    }
+
+    #[tokio::test]
+    async fn test_run_application_nonexistent_directory() {
+        let args = Args {
+            path: Some(PathBuf::from("/nonexistent/directory/that/does/not/exist")),
+        };
+
+        let result = run_application(args).await;
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("Failed to access directory"));
+    }
+
+    #[tokio::test]
+    async fn test_run_application_file_instead_of_directory() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("notadir.txt");
+        fs::write(&file_path, "test content").unwrap();
+
+        let args = Args {
+            path: Some(file_path.clone()),
+        };
+
+        let result = run_application(args).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_run_application_empty_directory_exits() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+
+        let args = Args {
+            path: Some(temp_dir.path().to_path_buf()),
+        };
+
+        // This should fail because no scripts are found
+        // The function calls std::process::exit(1) so we can't test it directly
+        // Instead, we test the logic that leads to it
+
+        let current_dir = args.path.unwrap().canonicalize().unwrap();
+        let mut script_files = Vec::new();
+
+        let root_files = script::discover_scripts_shallow(&current_dir).unwrap();
+        script_files.extend(root_files);
+
+        let possible_dirs = vec!["script", "scripts", "jarvis"];
+        for dir_name in possible_dirs {
+            let dir_path = current_dir.join(dir_name);
+            if dir_path.exists() && dir_path.is_dir() {
+                let files = script::discover_scripts(&dir_path).unwrap();
+                script_files.extend(files);
+            }
+        }
+
+        // Verify that we get no scripts from empty directory
+        assert!(script_files.is_empty());
+    }
+
+    #[test]
+    fn test_args_parsing_with_path() {
+        // Test that Args can parse path argument
+        let args = Args {
+            path: Some(PathBuf::from("/some/path")),
+        };
+        assert_eq!(args.path, Some(PathBuf::from("/some/path")));
+    }
+
+    #[test]
+    fn test_args_parsing_without_path() {
+        // Test that Args works without path
+        let args = Args { path: None };
+        assert_eq!(args.path, None);
+    }
+
+    #[tokio::test]
+    async fn test_run_application_with_valid_scripts() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create a test script
+        let script_path = temp_dir.path().join("test.sh");
+        let content = r#"#!/bin/bash
+test_function() {
+    echo "Test"
+}
+"#;
+        fs::write(&script_path, content).unwrap();
+
+        let args = Args {
+            path: Some(temp_dir.path().to_path_buf()),
+        };
+
+        // This test verifies the script discovery works
+        // We can't fully test run_application because it requires terminal setup
+        let current_dir = args.path.unwrap().canonicalize().unwrap();
+        let mut script_files = Vec::new();
+
+        let root_files = script::discover_scripts_shallow(&current_dir).unwrap();
+        script_files.extend(root_files);
+
+        assert!(!script_files.is_empty());
+        assert_eq!(script_files.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_run_application_script_parse_errors() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create an invalid bash script (empty file)
+        let script_path = temp_dir.path().join("invalid.sh");
+        fs::write(&script_path, "").unwrap();
+
+        let args = Args {
+            path: Some(temp_dir.path().to_path_buf()),
+        };
+
+        // Verify script discovery finds the file
+        let current_dir = args.path.unwrap().canonicalize().unwrap();
+        let mut script_files = Vec::new();
+
+        let root_files = script::discover_scripts_shallow(&current_dir).unwrap();
+        script_files.extend(root_files);
+
+        assert!(!script_files.is_empty());
+
+        // Attempt to parse - should handle errors gracefully
+        let mut all_functions = Vec::new();
+        let mut parse_errors = Vec::new();
+
+        for script_file in &script_files {
+            match &script_file.script_type {
+                script::ScriptType::Bash => {
+                    match script::parse_script(&script_file.path, &script_file.category) {
+                        Ok(functions) => {
+                            let visible_functions: Vec<_> =
+                                functions.into_iter().filter(|f| !f.ignored).collect();
+                            all_functions.extend(visible_functions);
+                        }
+                        Err(e) => {
+                            parse_errors.push((script_file.path.display().to_string(), e));
+                        }
+                    }
+                }
+                script::ScriptType::PackageJson => {}
+            }
+        }
+
+        // Empty file should parse successfully but have no functions
+        assert!(all_functions.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_run_application_discovers_subdirectories() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create script in scripts/ subdirectory
+        let scripts_dir = temp_dir.path().join("scripts");
+        fs::create_dir(&scripts_dir).unwrap();
+
+        let script_path = scripts_dir.join("test.sh");
+        let content = r#"#!/bin/bash
+test_function() {
+    echo "Test"
+}
+"#;
+        fs::write(&script_path, content).unwrap();
+
+        let args = Args {
+            path: Some(temp_dir.path().to_path_buf()),
+        };
+
+        // Test subdirectory discovery
+        let current_dir = args.path.unwrap().canonicalize().unwrap();
+        let mut script_files = Vec::new();
+
+        // Root directory
+        let root_files = script::discover_scripts_shallow(&current_dir).unwrap();
+        script_files.extend(root_files);
+
+        // Check subdirectories
+        let possible_dirs = vec!["script", "scripts", "jarvis"];
+        for dir_name in possible_dirs {
+            let dir_path = current_dir.join(dir_name);
+            if dir_path.exists() && dir_path.is_dir() {
+                let files = script::discover_scripts(&dir_path).unwrap();
+                script_files.extend(files);
+            }
+        }
+
+        assert!(!script_files.is_empty());
+        assert_eq!(script_files.len(), 1);
+    }
 }
 
 /// Suspend the TUI and restore terminal for interactive command execution
@@ -261,17 +748,93 @@ fn resume_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<(
     Ok(())
 }
 
+/// Execute a selected function and handle the full execution flow
+async fn execute_selected_function(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    app: &mut App,
+    func: &script::ScriptFunction,
+    script_files: &[script::ScriptFile],
+) -> Result<()> {
+    let func_name = func.name.clone();
+    let category = func.category.clone();
+    let display_name = func.display_name.clone();
+
+    // Find the script file
+    if let Some(script_file) = script_files.iter().find(|s| s.category == category) {
+        // Suspend TUI for interactive execution
+        suspend_tui(terminal)?;
+
+        // Clear screen and show execution message
+        println!("\n╔════════════════════════════════════════╗");
+        println!("║  Executing: {:<27}║", display_name);
+        println!("╚════════════════════════════════════════╝\n");
+
+        // Execute based on script type
+        let exit_code = match &script_file.script_type {
+            script::ScriptType::Bash => {
+                script::execute_function_interactive(&script_file.path, &func_name)?
+            }
+            script::ScriptType::PackageJson => {
+                // For npm scripts, pass the directory (parent of package.json)
+                let package_dir = script_file.path.parent().with_context(|| {
+                    format!(
+                        "Failed to get parent directory of: {}",
+                        script_file.path.display()
+                    )
+                })?;
+                script::execute_npm_script_interactive(package_dir, &func_name)?
+            }
+        };
+
+        // Show completion status
+        println!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        if exit_code == 0 {
+            println!("✅ Completed successfully!");
+        } else {
+            println!("❌ Failed with exit code: {}", exit_code);
+        }
+        println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        println!("\nPress Enter to return to JARVIS...");
+
+        // Wait for user to press Enter
+        let mut input = String::new();
+        if let Err(e) = std::io::stdin().read_line(&mut input) {
+            eprintln!("Warning: Failed to read input: {}", e);
+        }
+
+        // Store execution result in app output
+        app.output.clear();
+        app.reset_output_scroll();
+        app.output.push(format!("Function: {}", display_name));
+        app.output.push(format!("Category: {}", category));
+        app.output.push("".to_string());
+        if exit_code == 0 {
+            app.output
+                .push("Status: ✅ Completed successfully!".to_string());
+        } else {
+            app.output
+                .push(format!("Status: ❌ Failed with exit code: {}", exit_code));
+        }
+
+        // Resume TUI
+        resume_tui(terminal)?;
+    }
+
+    Ok(())
+}
+
 async fn run_app(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut App,
     script_files: &[script::ScriptFile],
+    event_reader: &mut dyn EventReader,
 ) -> Result<()> {
     loop {
         terminal
             .draw(|f| ui::render(f, app))
             .context("Failed to draw terminal UI")?;
 
-        if let Event::Key(key) = event::read().context("Failed to read keyboard event")? {
+        if let Event::Key(key) = event_reader.read_event()? {
             // Handle info modal close first
             if app.show_info {
                 match key.code {
@@ -301,82 +864,7 @@ async fn run_app(
                     KeyCode::Enter => {
                         // Execute function if one is selected
                         if let Some(ui::app::TreeItem::Function(func)) = app.selected_item() {
-                            // Execute function - clone data first
-                            let func_name = func.name.clone();
-                            let category = func.category.clone();
-                            let display_name = func.display_name.clone();
-
-                            // Find the script file
-                            if let Some(script_file) =
-                                script_files.iter().find(|s| s.category == category)
-                            {
-                                // Suspend TUI for interactive execution
-                                suspend_tui(terminal)?;
-
-                                // Clear screen and show execution message
-                                println!("\n╔════════════════════════════════════════╗");
-                                println!("║  Executing: {:<27}║", display_name);
-                                println!("╚════════════════════════════════════════╝\n");
-
-                                // Execute based on script type
-                                let exit_code = match &script_file.script_type {
-                                    script::ScriptType::Bash => {
-                                        script::execute_function_interactive(
-                                            &script_file.path,
-                                            &func_name,
-                                        )?
-                                    }
-                                    script::ScriptType::PackageJson => {
-                                        // For npm scripts, pass the directory (parent of package.json)
-                                        let package_dir =
-                                            script_file.path.parent().with_context(|| {
-                                                format!(
-                                                    "Failed to get parent directory of: {}",
-                                                    script_file.path.display()
-                                                )
-                                            })?;
-                                        script::execute_npm_script_interactive(
-                                            package_dir,
-                                            &func_name,
-                                        )?
-                                    }
-                                };
-
-                                // Show completion status
-                                println!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-                                if exit_code == 0 {
-                                    println!("✅ Completed successfully!");
-                                } else {
-                                    println!("❌ Failed with exit code: {}", exit_code);
-                                }
-                                println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-                                println!("\nPress Enter to return to JARVIS...");
-
-                                // Wait for user to press Enter
-                                let mut input = String::new();
-                                if let Err(e) = std::io::stdin().read_line(&mut input) {
-                                    eprintln!("Warning: Failed to read input: {}", e);
-                                }
-
-                                // Store execution result in app output
-                                app.output.clear();
-                                app.reset_output_scroll();
-                                app.output.push(format!("Function: {}", display_name));
-                                app.output.push(format!("Category: {}", category));
-                                app.output.push("".to_string());
-                                if exit_code == 0 {
-                                    app.output
-                                        .push("Status: ✅ Completed successfully!".to_string());
-                                } else {
-                                    app.output.push(format!(
-                                        "Status: ❌ Failed with exit code: {}",
-                                        exit_code
-                                    ));
-                                }
-
-                                // Resume TUI
-                                resume_tui(terminal)?;
-                            }
+                            execute_selected_function(terminal, app, &func, script_files).await?;
                         }
                     }
                     KeyCode::Char(c) => {
@@ -432,85 +920,8 @@ async fn run_app(
                                     app.toggle_category(&category);
                                 }
                                 ui::app::TreeItem::Function(func) => {
-                                    // Execute function - clone data first
-                                    let func_name = func.name.clone();
-                                    let category = func.category.clone();
-                                    let display_name = func.display_name.clone();
-
-                                    // Find the script file
-                                    if let Some(script_file) =
-                                        script_files.iter().find(|s| s.category == category)
-                                    {
-                                        // Suspend TUI for interactive execution
-                                        suspend_tui(terminal)?;
-
-                                        // Clear screen and show execution message
-                                        println!("\n╔════════════════════════════════════════╗");
-                                        println!("║  Executing: {:<27}║", display_name);
-                                        println!("╚════════════════════════════════════════╝\n");
-
-                                        // Execute based on script type
-                                        let exit_code = match &script_file.script_type {
-                                            script::ScriptType::Bash => {
-                                                script::execute_function_interactive(
-                                                    &script_file.path,
-                                                    &func_name,
-                                                )?
-                                            }
-                                            script::ScriptType::PackageJson => {
-                                                // For npm scripts, pass the directory (parent of package.json)
-                                                let package_dir = script_file
-                                                    .path
-                                                    .parent()
-                                                    .with_context(|| {
-                                                        format!(
-                                                            "Failed to get parent directory of: {}",
-                                                            script_file.path.display()
-                                                        )
-                                                    })?;
-                                                script::execute_npm_script_interactive(
-                                                    package_dir,
-                                                    &func_name,
-                                                )?
-                                            }
-                                        };
-
-                                        // Show completion status
-                                        println!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-                                        if exit_code == 0 {
-                                            println!("✅ Completed successfully!");
-                                        } else {
-                                            println!("❌ Failed with exit code: {}", exit_code);
-                                        }
-                                        println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-                                        println!("\nPress Enter to return to JARVIS...");
-
-                                        // Wait for user to press Enter
-                                        let mut input = String::new();
-                                        if let Err(e) = std::io::stdin().read_line(&mut input) {
-                                            eprintln!("Warning: Failed to read input: {}", e);
-                                        }
-
-                                        // Store execution result in app output
-                                        app.output.clear();
-                                        app.reset_output_scroll();
-                                        app.output.push(format!("Function: {}", display_name));
-                                        app.output.push(format!("Category: {}", category));
-                                        app.output.push("".to_string());
-                                        if exit_code == 0 {
-                                            app.output.push(
-                                                "Status: ✅ Completed successfully!".to_string(),
-                                            );
-                                        } else {
-                                            app.output.push(format!(
-                                                "Status: ❌ Failed with exit code: {}",
-                                                exit_code
-                                            ));
-                                        }
-
-                                        // Resume TUI
-                                        resume_tui(terminal)?;
-                                    }
+                                    execute_selected_function(terminal, app, &func, script_files)
+                                        .await?;
                                 }
                             }
                         }

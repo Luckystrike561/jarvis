@@ -272,4 +272,93 @@ custom_exit() {
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 42);
     }
+
+    #[test]
+    fn test_execute_npm_script_success() {
+        let temp_dir = TempDir::new().unwrap();
+        let package_json = temp_dir.path().join("package.json");
+
+        let content = r#"{
+  "name": "test-project",
+  "scripts": {
+    "test": "echo 'npm test success'"
+  }
+}"#;
+        fs::write(&package_json, content).unwrap();
+
+        let result = execute_npm_script_interactive(temp_dir.path(), "test");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 0);
+    }
+
+    #[test]
+    fn test_execute_npm_script_nonexistent_directory() {
+        let temp_dir = TempDir::new().unwrap();
+        let nonexistent = temp_dir.path().join("nonexistent");
+
+        let result = execute_npm_script_interactive(&nonexistent, "test");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[test]
+    fn test_execute_npm_script_directory_is_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("file.txt");
+        fs::write(&file_path, "content").unwrap();
+
+        let result = execute_npm_script_interactive(&file_path, "test");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not a directory"));
+    }
+
+    #[test]
+    fn test_execute_npm_script_no_package_json() {
+        let temp_dir = TempDir::new().unwrap();
+
+        let result = execute_npm_script_interactive(temp_dir.path(), "test");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("package.json not found"));
+    }
+
+    #[test]
+    fn test_execute_npm_script_empty_name() {
+        let temp_dir = TempDir::new().unwrap();
+        let package_json = temp_dir.path().join("package.json");
+
+        let content = r#"{
+  "name": "test-project",
+  "scripts": {
+    "test": "echo 'test'"
+  }
+}"#;
+        fs::write(&package_json, content).unwrap();
+
+        let result = execute_npm_script_interactive(temp_dir.path(), "");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("cannot be empty"));
+    }
+
+    #[test]
+    fn test_execute_npm_script_nonexistent_script() {
+        let temp_dir = TempDir::new().unwrap();
+        let package_json = temp_dir.path().join("package.json");
+
+        let content = r#"{
+  "name": "test-project",
+  "scripts": {
+    "test": "echo 'test'"
+  }
+}"#;
+        fs::write(&package_json, content).unwrap();
+
+        // Try to run a script that doesn't exist - npm will return non-zero exit code
+        let result = execute_npm_script_interactive(temp_dir.path(), "nonexistent");
+        // npm run will execute but return non-zero
+        assert!(result.is_ok());
+        assert_ne!(result.unwrap(), 0);
+    }
 }
