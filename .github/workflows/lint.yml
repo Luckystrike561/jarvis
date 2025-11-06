@@ -24,8 +24,5 @@ jobs:
         with:
           enable-cache: true
       
-      - name: Run code quality checks
+      - name: Run Rust linting and format check
         run: devbox run check
-      
-      - name: Lint bash scripts
-        run: devbox run lint

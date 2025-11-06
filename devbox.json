@@ -3,10 +3,6 @@
   "packages": [
     "cargo@latest",
     "rustc@latest",
-    "bash@latest",
-    "shellcheck@latest",
-    "shfmt@latest",
-    "fzf@latest",
     "rustfmt@latest",
     "clippy@latest",
     "rustup@latest"
@@ -19,8 +15,7 @@
       "echo '  devbox run build    - Build the project'",
       "echo '  devbox run dev      - Build and run Jarvis'",
       "echo '  devbox run check    - Run clippy and format check'",
-      "echo '  devbox run fmt      - Format Rust and bash code'",
-      "echo '  devbox run lint     - Lint bash scripts with shellcheck'",
+      "echo '  devbox run fmt      - Format Rust code'",
       "echo '  devbox run test     - Run all tests'",
       "echo '  devbox run release  - Build optimized release binary'",
       "echo '  devbox run install  - Install Jarvis locally to ~/.local/bin'",
@@ -38,11 +33,7 @@
         "cargo fmt -- --check"
       ],
       "fmt": [
-        "cargo fmt",
-        "shfmt -w scripts/"
-      ],
-      "lint": [
-        "shellcheck scripts/*.sh"
+        "cargo fmt"
       ],
       "test": [
         "cargo test",
