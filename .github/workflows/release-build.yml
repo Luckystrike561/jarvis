@@ -18,9 +18,40 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
+  wait-for-version-sync:
+    name: Wait for Version Sync
+    runs-on: ubuntu-latest
+    # Only run this job when triggered by release event (not manual)
+    if: github.event_name == 'release'
+    steps:
+      - name: Wait for version sync workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Waiting for version sync workflow to complete..."
+          # Wait up to 2 minutes for the version sync workflow
+          for i in {1..24}; do
+            # Check if version sync workflow has completed
+            STATUS=$(gh run list --workflow=release-version-sync.yml --limit 1 --json status --jq '.[0].status')
+            echo "Attempt $i/24: Version sync status: $STATUS"
+            
+            if [ "$STATUS" = "completed" ]; then
+              echo "Version sync completed!"
+              exit 0
+            fi
+            
+            sleep 5
+          done
+          
+          echo "Warning: Version sync workflow did not complete in time"
+          exit 1
+
   build-release:
     name: Build Release Binaries
     runs-on: ${{ matrix.os }}
+    # Wait for version sync when triggered by release, skip for manual
+    needs: [wait-for-version-sync]
+    if: always() && (needs.wait-for-version-sync.result == 'success' || github.event_name == 'workflow_dispatch')
     strategy:
       matrix:
         include:
@@ -37,7 +68,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}
+          # For release events, checkout main (which has updated version)
+          # For manual dispatch, checkout the specified tag
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || 'main' }}
 
       - name: Install Devbox
         uses: jetify-com/devbox-install-action@v0.14.0
