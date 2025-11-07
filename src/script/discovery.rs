@@ -6,6 +6,7 @@ use walkdir::WalkDir;
 pub enum ScriptType {
     Bash,
     PackageJson,
+    DevboxJson,
 }
 
 #[derive(Debug, Clone)]
@@ -87,7 +88,7 @@ fn discover_scripts_with_depth(scripts_dir: &Path, max_depth: usize) -> Result<V
             continue;
         }
 
-        // Check filename for package.json
+        // Check filename for package.json or devbox.json
         if let Some(filename) = path.file_name().and_then(|f| f.to_str()) {
             if filename == "package.json" {
                 // Extract parent directory name for category
@@ -110,6 +111,31 @@ fn discover_scripts_with_depth(scripts_dir: &Path, max_depth: usize) -> Result<V
                     category,
                     display_name,
                     script_type: ScriptType::PackageJson,
+                });
+                continue;
+            }
+
+            if filename == "devbox.json" {
+                // Extract parent directory name for category
+                let name = if let Some(parent) = path.parent() {
+                    parent
+                        .file_name()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("devbox")
+                        .to_string()
+                } else {
+                    "devbox".to_string()
+                };
+
+                let category = name.clone();
+                let display_name = format_display_name(&name);
+
+                scripts.push(ScriptFile {
+                    path: path.to_path_buf(),
+                    name,
+                    category,
+                    display_name,
+                    script_type: ScriptType::DevboxJson,
                 });
                 continue;
             }
@@ -388,5 +414,69 @@ mod tests {
 
         assert_eq!(bash_count, 1);
         assert_eq!(npm_count, 1);
+    }
+
+    #[test]
+    fn test_discover_devbox_json() {
+        let temp_dir = TempDir::new().unwrap();
+        let devbox_path = temp_dir.path().join("devbox.json");
+
+        let content = r#"{
+  "shell": {
+    "scripts": {
+      "test": ["cargo test"]
+    }
+  }
+}"#;
+        fs::write(&devbox_path, content).unwrap();
+
+        let result = discover_scripts(temp_dir.path()).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].script_type, ScriptType::DevboxJson);
+        // Category should be the parent directory name
+        assert!(result[0].category.len() > 0);
+    }
+
+    #[test]
+    fn test_discover_all_script_types() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create bash script
+        fs::write(temp_dir.path().join("script.sh"), "#!/bin/bash").unwrap();
+
+        // Create package.json
+        let npm_content = r#"{"name": "test", "scripts": {"test": "jest"}}"#;
+        fs::write(temp_dir.path().join("package.json"), npm_content).unwrap();
+
+        // Create devbox.json
+        let devbox_content = r#"{
+  "shell": {
+    "scripts": {
+      "build": ["cargo build"]
+    }
+  }
+}"#;
+        fs::write(temp_dir.path().join("devbox.json"), devbox_content).unwrap();
+
+        let result = discover_scripts(temp_dir.path()).unwrap();
+        assert_eq!(result.len(), 3);
+
+        // Should find all three types
+        let bash_count = result
+            .iter()
+            .filter(|s| s.script_type == ScriptType::Bash)
+            .count();
+        let npm_count = result
+            .iter()
+            .filter(|s| s.script_type == ScriptType::PackageJson)
+            .count();
+        let devbox_count = result
+            .iter()
+            .filter(|s| s.script_type == ScriptType::DevboxJson)
+            .count();
+
+        assert_eq!(bash_count, 1);
+        assert_eq!(npm_count, 1);
+        assert_eq!(devbox_count, 1);
     }
 }

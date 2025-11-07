@@ -161,6 +161,28 @@ async fn run_application(args: Args) -> Result<()> {
                     }
                 }
             }
+            script::ScriptType::DevboxJson => {
+                match script::parse_devbox_json(&script_file.path, &script_file.category) {
+                    Ok(devbox_scripts) => {
+                        // Convert DevboxScript to ScriptFunction for TUI
+                        let functions: Vec<script::ScriptFunction> = devbox_scripts
+                            .into_iter()
+                            .map(|devbox_script| script::ScriptFunction {
+                                name: devbox_script.name,
+                                display_name: devbox_script.display_name,
+                                category: devbox_script.category,
+                                description: devbox_script.description,
+                                emoji: None, // devbox scripts don't have emoji support yet
+                                ignored: false, // devbox scripts are never ignored
+                            })
+                            .collect();
+                        all_functions.extend(functions);
+                    }
+                    Err(e) => {
+                        parse_errors.push((script_file.path.display().to_string(), e));
+                    }
+                }
+            }
         }
     }
 
@@ -662,6 +684,7 @@ test_function() {
                     }
                 }
                 script::ScriptType::PackageJson => {}
+                script::ScriptType::DevboxJson => {}
             }
         }
 
@@ -783,6 +806,16 @@ async fn execute_selected_function(
                     )
                 })?;
                 script::execute_npm_script_interactive(package_dir, &func_name)?
+            }
+            script::ScriptType::DevboxJson => {
+                // For devbox scripts, pass the directory (parent of devbox.json)
+                let devbox_dir = script_file.path.parent().with_context(|| {
+                    format!(
+                        "Failed to get parent directory of: {}",
+                        script_file.path.display()
+                    )
+                })?;
+                script::execute_devbox_script_interactive(devbox_dir, &func_name)?
             }
         };
 
