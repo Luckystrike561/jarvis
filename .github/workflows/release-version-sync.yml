@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   update-version:
@@ -27,6 +28,12 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Extracted version: $VERSION"
 
+      - name: Create branch for version update
+        run: |
+          BRANCH_NAME="chore/bump-version-${{ steps.extract_version.outputs.version }}"
+          git checkout -b "$BRANCH_NAME"
+          echo "branch_name=$BRANCH_NAME" >> $GITHUB_ENV
+
       - name: Update Cargo.toml version
         run: |
           VERSION="${{ steps.extract_version.outputs.version }}"
@@ -45,8 +52,30 @@ jobs:
           git add Cargo.toml
           if git diff --staged --quiet; then
             echo "No changes to commit"
+            echo "has_changes=false" >> $GITHUB_ENV
           else
             git commit -m "chore: bump version to ${{ steps.extract_version.outputs.version }}"
-            git push origin main
-            echo "Version updated and pushed to main"
+            git push -u origin "${{ env.branch_name }}"
+            echo "has_changes=true" >> $GITHUB_ENV
           fi
+
+      - name: Create Pull Request
+        if: env.has_changes == 'true'
+        run: |
+          gh pr create \
+            --title "chore: bump version to ${{ steps.extract_version.outputs.version }}" \
+            --body "Automated version bump triggered by release ${{ github.event.release.tag_name }}.
+
+          ## Changes
+          - Update \`Cargo.toml\` version from current to \`${{ steps.extract_version.outputs.version }}\`
+
+          ## Details
+          - **Release**: ${{ github.event.release.html_url }}
+          - **Tag**: ${{ github.event.release.tag_name }}
+          - **Triggered by**: Release published event
+
+          This PR was automatically created by the release version sync workflow." \
+            --base main \
+            --head "${{ env.branch_name }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
