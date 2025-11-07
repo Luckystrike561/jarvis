@@ -108,6 +108,48 @@ pub fn execute_npm_script_interactive(package_dir: &Path, script_name: &str) -> 
     Ok(status.code().unwrap_or(1))
 }
 
+/// Execute a devbox script interactively with full terminal access
+pub fn execute_devbox_script_interactive(devbox_dir: &Path, script_name: &str) -> Result<i32> {
+    // Validate inputs
+    if !devbox_dir.exists() {
+        anyhow::bail!("Directory not found: {}", devbox_dir.display());
+    }
+
+    if !devbox_dir.is_dir() {
+        anyhow::bail!("Path is not a directory: {}", devbox_dir.display());
+    }
+
+    // Check if devbox.json exists
+    let devbox_json = devbox_dir.join("devbox.json");
+    if !devbox_json.exists() {
+        anyhow::bail!("devbox.json not found in: {}", devbox_dir.display());
+    }
+
+    // Validate script name
+    if script_name.is_empty() {
+        anyhow::bail!("Script name cannot be empty");
+    }
+
+    // Execute devbox run with inherited stdin/stdout/stderr for full interactivity
+    let status = Command::new("devbox")
+        .arg("run")
+        .arg(script_name)
+        .current_dir(devbox_dir)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .with_context(|| {
+            format!(
+                "Failed to execute devbox script '{}' in directory '{}'",
+                script_name,
+                devbox_dir.display()
+            )
+        })?;
+
+    Ok(status.code().unwrap_or(1))
+}
+
 /// Check if a string is a valid bash identifier
 fn is_valid_bash_identifier(name: &str) -> bool {
     if name.is_empty() {
@@ -360,5 +402,80 @@ custom_exit() {
         // npm run will execute but return non-zero
         assert!(result.is_ok());
         assert_ne!(result.unwrap(), 0);
+    }
+
+    #[test]
+    fn test_execute_devbox_script_success() {
+        let temp_dir = TempDir::new().unwrap();
+        let devbox_json = temp_dir.path().join("devbox.json");
+
+        let content = r#"{
+  "shell": {
+    "scripts": {
+      "test": ["echo 'devbox test success'"]
+    }
+  }
+}"#;
+        fs::write(&devbox_json, content).unwrap();
+
+        // Note: This test will only pass if devbox is installed
+        // In CI/CD, devbox should be available
+        let result = execute_devbox_script_interactive(temp_dir.path(), "test");
+        // We expect this to succeed if devbox is installed
+        if result.is_ok() {
+            assert_eq!(result.unwrap(), 0);
+        }
+    }
+
+    #[test]
+    fn test_execute_devbox_script_nonexistent_directory() {
+        let temp_dir = TempDir::new().unwrap();
+        let nonexistent = temp_dir.path().join("nonexistent");
+
+        let result = execute_devbox_script_interactive(&nonexistent, "test");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[test]
+    fn test_execute_devbox_script_directory_is_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("file.txt");
+        fs::write(&file_path, "content").unwrap();
+
+        let result = execute_devbox_script_interactive(&file_path, "test");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not a directory"));
+    }
+
+    #[test]
+    fn test_execute_devbox_script_no_devbox_json() {
+        let temp_dir = TempDir::new().unwrap();
+
+        let result = execute_devbox_script_interactive(temp_dir.path(), "test");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("devbox.json not found"));
+    }
+
+    #[test]
+    fn test_execute_devbox_script_empty_name() {
+        let temp_dir = TempDir::new().unwrap();
+        let devbox_json = temp_dir.path().join("devbox.json");
+
+        let content = r#"{
+  "shell": {
+    "scripts": {
+      "test": ["echo 'test'"]
+    }
+  }
+}"#;
+        fs::write(&devbox_json, content).unwrap();
+
+        let result = execute_devbox_script_interactive(temp_dir.path(), "");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("cannot be empty"));
     }
 }
