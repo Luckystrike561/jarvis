@@ -3,6 +3,12 @@ name: Release Build
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g., v0.1.4)'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -31,7 +37,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}
 
       - name: Install Devbox
         uses: jetify-com/devbox-install-action@v0.14.0
@@ -59,29 +65,9 @@ jobs:
           fi
           chmod +x ${{ matrix.asset_name }}
 
-      - name: Upload Raw Binary
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./${{ matrix.asset_name }}
-          asset_name: ${{ matrix.asset_name }}
-          asset_content_type: application/octet-stream
-
       - name: Create tarball
         run: |
           tar -czf ${{ matrix.asset_name }}.tar.gz ${{ matrix.asset_name }}
-
-      - name: Upload Tarball
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./${{ matrix.asset_name }}.tar.gz
-          asset_name: ${{ matrix.asset_name }}.tar.gz
-          asset_content_type: application/gzip
 
       - name: Generate SHA256 checksums
         run: |
@@ -93,22 +79,14 @@ jobs:
             shasum -a 256 ${{ matrix.asset_name }}.tar.gz > ${{ matrix.asset_name }}.tar.gz.sha256
           fi
 
-      - name: Upload Binary Checksum
-        uses: actions/upload-release-asset@v1
+      - name: Upload release assets
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./${{ matrix.asset_name }}.sha256
-          asset_name: ${{ matrix.asset_name }}.sha256
-          asset_content_type: text/plain
-
-      - name: Upload Tarball Checksum
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./${{ matrix.asset_name }}.tar.gz.sha256
-          asset_name: ${{ matrix.asset_name }}.tar.gz.sha256
-          asset_content_type: text/plain
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}"
+          gh release upload "$TAG" \
+            ${{ matrix.asset_name }} \
+            ${{ matrix.asset_name }}.sha256 \
+            ${{ matrix.asset_name }}.tar.gz \
+            ${{ matrix.asset_name }}.tar.gz.sha256 \
+            --clobber
