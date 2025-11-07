@@ -3,6 +3,12 @@ name: Sync Release Version
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to sync (e.g., 0.1.4)'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -21,9 +27,13 @@ jobs:
       - name: Extract version from release tag
         id: extract_version
         run: |
-          # Extract version from tag (e.g., v0.1.4 -> 0.1.4)
-          VERSION="${{ github.event.release.tag_name }}"
-          VERSION="${VERSION#v}"
+          # Use manual input if provided, otherwise extract from release tag
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${{ github.event.release.tag_name }}"
+            VERSION="${VERSION#v}"
+          fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Extracted version: $VERSION"
 
