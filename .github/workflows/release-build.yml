@@ -66,7 +66,7 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           # For release events, checkout main (which has updated version)
           # For manual dispatch, checkout the specified tag
