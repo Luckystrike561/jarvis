@@ -86,12 +86,8 @@ Jarvis doesn't care what your scripts do - it just makes them easy to discover, 
 ### Homebrew (macOS & Linux)
 
 ```bash
-# Add the tap (coming soon - formula is in this repo under homebrew/)
-brew tap Luckystrike561/jarvis
-brew install jarvis
-
-# Or install directly from URL
-brew install https://raw.githubusercontent.com/Luckystrike561/jarvis/homebrew-formula/homebrew/jarvis.rb
+# Install directly (formula is maintained in the main repository)
+brew install https://raw.githubusercontent.com/Luckystrike561/jarvis/main/homebrew/jarvis.rb
 
 # Run from anywhere
 jarvis
