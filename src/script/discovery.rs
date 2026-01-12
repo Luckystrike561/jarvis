@@ -1,5 +1,7 @@
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::sync::OnceLock;
 use walkdir::WalkDir;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -17,6 +19,22 @@ pub struct ScriptFile {
     pub category: String,
     pub display_name: String,
     pub script_type: ScriptType,
+}
+
+/// Cache for devbox availability check (checked once per process)
+static DEVBOX_AVAILABLE: OnceLock<bool> = OnceLock::new();
+
+/// Check if devbox is installed and available in PATH
+fn is_devbox_available() -> bool {
+    *DEVBOX_AVAILABLE.get_or_init(|| {
+        Command::new("devbox")
+            .arg("version")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false)
+    })
 }
 
 /// Formats a filename into a display-friendly name
@@ -116,6 +134,11 @@ fn discover_scripts_with_depth(scripts_dir: &Path, max_depth: usize) -> Result<V
             }
 
             if filename == "devbox.json" {
+                // Skip devbox.json if devbox is not installed
+                if !is_devbox_available() {
+                    continue;
+                }
+
                 // Extract parent directory name for category
                 let name = if let Some(parent) = path.parent() {
                     parent
