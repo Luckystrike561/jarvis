@@ -10,8 +10,7 @@ A beautiful TUI for managing and executing scripts with zero configuration.
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-1.70+-orange.svg)](https://www.rust-lang.org/)
 
-<!-- Add a screenshot after capturing one -->
-<!-- ![Jarvis Screenshot](assets/screenshot.png) -->
+![Jarvis Screenshot](assets/screenshot.jpg)
 
 [Features](#features) • [Installation](#installation) • [Usage](#usage) • [Contributing](#contributing)
 
