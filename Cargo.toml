@@ -4,6 +4,12 @@ version = "0.1.5"
 edition = "2021"
 authors = ["Luckystrike561"]
 description = "A beautiful TUI for managing and executing scripts with zero configuration"
+license = "MIT"
+repository = "https://github.com/Luckystrike561/jarvis"
+homepage = "https://github.com/Luckystrike561/jarvis"
+readme = "README.md"
+keywords = ["tui", "terminal", "scripts", "bash", "cli"]
+categories = ["command-line-utilities", "development-tools"]
 
 [[bin]]
 name = "jarvis"
