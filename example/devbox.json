@@ -1,0 +1,18 @@
+{
+  "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.16.0/.schema/devbox.schema.json",
+  "name": "test",
+  "description": "simple test",
+  "packages": {
+    "jq": "1.8.1"
+  },
+  "shell": {
+    "init_hook": [],
+    "scripts": {
+      "help": "jq .shell.scripts devbox.json"
+    }
+  },
+  "env": {
+    "VENV_DIR": ".venv"
+  },
+  "env_from": ".env"
+}
