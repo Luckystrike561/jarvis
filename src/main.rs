@@ -39,6 +39,10 @@ struct Args {
     /// Path to the base directory to search for bash scripts
     #[arg(short, long, value_name = "DIR")]
     path: Option<PathBuf>,
+
+    /// Print debug information about discovered scripts and exit
+    #[arg(long)]
+    debug: bool,
 }
 
 #[tokio::main]
@@ -120,6 +124,20 @@ async fn run_application(args: Args) -> Result<()> {
         std::process::exit(1);
     }
 
+    // Debug mode: print discovered scripts and exit
+    if args.debug {
+        println!("=== Discovered Script Files ===");
+        for sf in &script_files {
+            println!(
+                "  Path: {}\n    Category: {}\n    Type: {:?}\n",
+                sf.path.display(),
+                sf.category,
+                sf.script_type
+            );
+        }
+        println!("\n=== Parsed Functions ===");
+    }
+
     // Parse all scripts
     let mut all_functions = Vec::new();
     let mut parse_errors = Vec::new();
@@ -152,6 +170,7 @@ async fn run_application(args: Args) -> Result<()> {
                                 description: npm_script.description,
                                 emoji: None, // npm scripts don't have emoji support yet
                                 ignored: false, // npm scripts are never ignored
+                                script_type: script::ScriptType::PackageJson,
                             })
                             .collect();
                         all_functions.extend(functions);
@@ -174,6 +193,7 @@ async fn run_application(args: Args) -> Result<()> {
                                 description: devbox_script.description,
                                 emoji: None, // devbox scripts don't have emoji support yet
                                 ignored: false, // devbox scripts are never ignored
+                                script_type: script::ScriptType::DevboxJson,
                             })
                             .collect();
                         all_functions.extend(functions);
@@ -193,6 +213,22 @@ async fn run_application(args: Args) -> Result<()> {
             eprintln!("  - {}: {}", path, err);
         }
         eprintln!();
+    }
+
+    // Debug mode: print functions and exit
+    if args.debug {
+        for func in &all_functions {
+            println!(
+                "  Name: {}\n    Category: {}\n    Type: {:?}\n",
+                func.name, func.category, func.script_type
+            );
+        }
+        println!(
+            "\nTotal: {} script files, {} functions",
+            script_files.len(),
+            all_functions.len()
+        );
+        return Ok(());
     }
 
     if all_functions.is_empty() {
@@ -307,6 +343,7 @@ mod tests {
                 description: "Test description 1".to_string(),
                 emoji: Some("🚀".to_string()),
                 ignored: false,
+                script_type: script::ScriptType::Bash,
             },
             script::ScriptFunction {
                 name: "test_func2".to_string(),
@@ -315,6 +352,7 @@ mod tests {
                 description: "Test description 2".to_string(),
                 emoji: None,
                 ignored: false,
+                script_type: script::ScriptType::Bash,
             },
         ];
         App::new(functions, "Test Project".to_string())
@@ -535,6 +573,7 @@ mod tests {
     async fn test_run_application_nonexistent_directory() {
         let args = Args {
             path: Some(PathBuf::from("/nonexistent/directory/that/does/not/exist")),
+            debug: false,
         };
 
         let result = run_application(args).await;
@@ -554,6 +593,7 @@ mod tests {
 
         let args = Args {
             path: Some(file_path.clone()),
+            debug: false,
         };
 
         let result = run_application(args).await;
@@ -568,6 +608,7 @@ mod tests {
 
         let args = Args {
             path: Some(temp_dir.path().to_path_buf()),
+            debug: false,
         };
 
         // This should fail because no scripts are found
@@ -598,6 +639,7 @@ mod tests {
         // Test that Args can parse path argument
         let args = Args {
             path: Some(PathBuf::from("/some/path")),
+            debug: false,
         };
         assert_eq!(args.path, Some(PathBuf::from("/some/path")));
     }
@@ -605,7 +647,10 @@ mod tests {
     #[test]
     fn test_args_parsing_without_path() {
         // Test that Args works without path
-        let args = Args { path: None };
+        let args = Args {
+            path: None,
+            debug: false,
+        };
         assert_eq!(args.path, None);
     }
 
@@ -627,6 +672,7 @@ test_function() {
 
         let args = Args {
             path: Some(temp_dir.path().to_path_buf()),
+            debug: false,
         };
 
         // This test verifies the script discovery works
@@ -654,6 +700,7 @@ test_function() {
 
         let args = Args {
             path: Some(temp_dir.path().to_path_buf()),
+            debug: false,
         };
 
         // Verify script discovery finds the file
@@ -713,6 +760,7 @@ test_function() {
 
         let args = Args {
             path: Some(temp_dir.path().to_path_buf()),
+            debug: false,
         };
 
         // Test subdirectory discovery
@@ -781,9 +829,13 @@ async fn execute_selected_function(
     let func_name = func.name.clone();
     let category = func.category.clone();
     let display_name = func.display_name.clone();
+    let script_type = func.script_type.clone();
 
-    // Find the script file
-    if let Some(script_file) = script_files.iter().find(|s| s.category == category) {
+    // Find the script file matching both category and script type
+    if let Some(script_file) = script_files
+        .iter()
+        .find(|s| s.category == category && s.script_type == script_type)
+    {
         // Suspend TUI for interactive execution
         suspend_tui(terminal)?;
 

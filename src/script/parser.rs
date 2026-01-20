@@ -3,7 +3,7 @@ use regex::Regex;
 use std::fs;
 use std::path::Path;
 
-use crate::script::discovery::format_display_name;
+use crate::script::discovery::{format_display_name, ScriptType};
 
 #[derive(Debug, Clone)]
 pub struct ScriptFunction {
@@ -13,6 +13,7 @@ pub struct ScriptFunction {
     pub description: String,
     pub emoji: Option<String>,
     pub ignored: bool,
+    pub script_type: ScriptType,
 }
 
 pub fn parse_script(path: &Path, category: &str) -> Result<Vec<ScriptFunction>> {
@@ -105,6 +106,7 @@ pub fn parse_script(path: &Path, category: &str) -> Result<Vec<ScriptFunction>> 
                 description: final_description,
                 emoji,
                 ignored,
+                script_type: ScriptType::Bash,
             });
         }
     }

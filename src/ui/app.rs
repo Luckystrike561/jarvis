@@ -324,6 +324,7 @@ pub enum TreeItem {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::script::ScriptType;
 
     fn create_test_functions() -> Vec<ScriptFunction> {
         vec![
@@ -334,6 +335,7 @@ mod tests {
                 description: "Test function 1".to_string(),
                 emoji: None,
                 ignored: false,
+                script_type: ScriptType::Bash,
             },
             ScriptFunction {
                 name: "func2".to_string(),
@@ -342,6 +344,7 @@ mod tests {
                 description: "Test function 2".to_string(),
                 emoji: None,
                 ignored: false,
+                script_type: ScriptType::Bash,
             },
             ScriptFunction {
                 name: "func3".to_string(),
@@ -350,6 +353,7 @@ mod tests {
                 description: "Test function 3".to_string(),
                 emoji: None,
                 ignored: false,
+                script_type: ScriptType::Bash,
             },
         ]
     }
