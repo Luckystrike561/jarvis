@@ -2,7 +2,7 @@ class Jarvis < Formula
   desc "Beautiful TUI for managing and executing scripts with zero configuration"
   homepage "https://github.com/Luckystrike561/jarvis"
   url "https://github.com/Luckystrike561/jarvis/archive/refs/tags/v0.1.9.tar.gz"
-  sha256 ""
+  sha256 "167d0bbc5acf8ecee4eb3ae57491f8338894a63db9029a11771bf884c12baf79"
   license "MIT"
   head "https://github.com/Luckystrike561/jarvis.git", branch: "main"
 
