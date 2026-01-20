@@ -23,39 +23,14 @@
       "echo ''"
     ],
     "scripts": {
-      "build": [
-        "cargo build"
-      ],
-      "dev": [
-        "cargo run"
-      ],
-      "check": [
-        "cargo clippy -- -D warnings",
-        "cargo fmt -- --check"
-      ],
-      "fmt": [
-        "cargo fmt"
-      ],
-      "test": [
-        "cargo test",
-        "cargo clippy -- -D warnings"
-      ],
-      "release": [
-        "cargo build --release",
-        "echo 'Binary available at: target/release/jarvis'"
-      ],
-      "install": [
-        "cargo build --release",
-        "mkdir -p ~/.local/bin",
-        "cp target/release/jarvis ~/.local/bin/",
-        "echo '✅ Jarvis installed to ~/.local/bin/jarvis'",
-        "echo ''",
-        "echo 'Make sure ~/.local/bin is in your PATH:'",
-        "echo '  export PATH=\"$HOME/.local/bin:$PATH\"'"
-      ],
-      "deploy-homebrew": [
-        "bash scripts/update-formula.sh"
-      ]
+      "build": "cargo build",
+      "dev": "cargo run",
+      "check": "cargo clippy -- -D warnings && cargo fmt -- --check",
+      "fmt": "cargo fmt",
+      "test": "cargo test && cargo clippy -- -D warnings",
+      "release": "cargo build --release && echo 'Binary available at: target/release/jarvis'",
+      "install": "cargo install --path .",
+      "deploy-homebrew": "bash scripts/update-formula.sh"
     }
   }
 }
