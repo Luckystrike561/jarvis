@@ -1,15 +1,79 @@
 use anyhow::{Context, Result};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
 use crate::script::discovery::format_display_name;
 
+/// Represents a script value that can be either a string or an array of strings
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+pub enum ScriptValue {
+    Single(String),
+    Multiple(Vec<String>),
+}
+
+impl<'de> Deserialize<'de> for ScriptValue {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        use serde::de::{self, Visitor};
+
+        struct ScriptValueVisitor;
+
+        impl<'de> Visitor<'de> for ScriptValueVisitor {
+            type Value = ScriptValue;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a string or an array of strings")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<ScriptValue, E>
+            where
+                E: de::Error,
+            {
+                Ok(ScriptValue::Single(value.to_string()))
+            }
+
+            fn visit_string<E>(self, value: String) -> Result<ScriptValue, E>
+            where
+                E: de::Error,
+            {
+                Ok(ScriptValue::Single(value))
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<ScriptValue, A::Error>
+            where
+                A: de::SeqAccess<'de>,
+            {
+                let mut commands = Vec::new();
+                while let Some(cmd) = seq.next_element::<String>()? {
+                    commands.push(cmd);
+                }
+                Ok(ScriptValue::Multiple(commands))
+            }
+        }
+
+        deserializer.deserialize_any(ScriptValueVisitor)
+    }
+}
+
+impl ScriptValue {
+    /// Convert to a vector of commands
+    pub fn to_commands(&self) -> Vec<String> {
+        match self {
+            ScriptValue::Single(cmd) => vec![cmd.clone()],
+            ScriptValue::Multiple(cmds) => cmds.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DevboxShell {
     #[serde(default)]
-    pub scripts: HashMap<String, Vec<String>>,
+    pub scripts: HashMap<String, ScriptValue>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -42,7 +106,10 @@ pub fn parse_devbox_json(path: &Path, category: &str) -> Result<Vec<DevboxScript
 
     // Extract scripts from shell.scripts if present
     if let Some(shell) = devbox.shell {
-        for (script_name, script_commands) in shell.scripts {
+        for (script_name, script_value) in shell.scripts {
+            // Convert ScriptValue to Vec<String>
+            let script_commands = script_value.to_commands();
+
             // Auto-generate display name from script name
             let display_name = format_display_name(&script_name);
 
@@ -287,5 +354,64 @@ mod tests {
         let result = parse_devbox_json(&devbox_path, "Test").unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].display_name, "Deploy Homebrew");
+    }
+
+    #[test]
+    fn test_parse_devbox_json_string_scripts() {
+        let temp_dir = TempDir::new().unwrap();
+        let devbox_path = temp_dir.path().join("devbox.json");
+
+        // Scripts as plain strings (not arrays) - common devbox.json format
+        let content = r#"{
+  "shell": {
+    "scripts": {
+      "help": "jq .shell.scripts devbox.json",
+      "build": "cargo build --release",
+      "test": "cargo test"
+    }
+  }
+}"#;
+        fs::write(&devbox_path, content).unwrap();
+
+        let result = parse_devbox_json(&devbox_path, "Test").unwrap();
+        assert_eq!(result.len(), 3);
+
+        // Check that string scripts are parsed correctly
+        let help = result.iter().find(|s| s.name == "help").unwrap();
+        assert_eq!(help.commands.len(), 1);
+        assert_eq!(help.commands[0], "jq .shell.scripts devbox.json");
+
+        let build = result.iter().find(|s| s.name == "build").unwrap();
+        assert_eq!(build.commands.len(), 1);
+        assert_eq!(build.commands[0], "cargo build --release");
+    }
+
+    #[test]
+    fn test_parse_devbox_json_mixed_string_and_array_scripts() {
+        let temp_dir = TempDir::new().unwrap();
+        let devbox_path = temp_dir.path().join("devbox.json");
+
+        // Mix of string and array scripts
+        let content = r#"{
+  "shell": {
+    "scripts": {
+      "simple": "echo hello",
+      "complex": ["cargo clippy", "cargo fmt --check"]
+    }
+  }
+}"#;
+        fs::write(&devbox_path, content).unwrap();
+
+        let result = parse_devbox_json(&devbox_path, "Test").unwrap();
+        assert_eq!(result.len(), 2);
+
+        let simple = result.iter().find(|s| s.name == "simple").unwrap();
+        assert_eq!(simple.commands.len(), 1);
+        assert_eq!(simple.commands[0], "echo hello");
+
+        let complex = result.iter().find(|s| s.name == "complex").unwrap();
+        assert_eq!(complex.commands.len(), 2);
+        assert_eq!(complex.commands[0], "cargo clippy");
+        assert_eq!(complex.commands[1], "cargo fmt --check");
     }
 }
