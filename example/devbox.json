@@ -13,6 +13,5 @@
   },
   "env": {
     "VENV_DIR": ".venv"
-  },
-  "env_from": ".env"
+  }
 }
