@@ -414,4 +414,46 @@ mod tests {
         assert_eq!(complex.commands[0], "cargo clippy");
         assert_eq!(complex.commands[1], "cargo fmt --check");
     }
+
+    #[test]
+    fn test_parse_devbox_json_monopoly_format() {
+        let temp_dir = TempDir::new().unwrap();
+        let devbox_path = temp_dir.path().join("devbox.json");
+
+        // Full monopoly-style devbox.json with all fields
+        let content = r#"{
+  "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.16.0/.schema/devbox.schema.json",
+  "name": "monopoly",
+  "description": "backoffice multi-language monorepo",
+  "packages": {
+    "jq": "1.8.1",
+    "nodejs": "24.12.0"
+  },
+  "shell": {
+    "init_hook": [],
+    "scripts": {
+      "help": "jq .shell.scripts devbox.json",
+      "all": "npx nx run-many -t all",
+      "venv": ". $VENV_DIR/bin/activate"
+    }
+  },
+  "env": {
+    "VENV_DIR": ".venv"
+  },
+  "env_from": ".env"
+}"#;
+        fs::write(&devbox_path, content).unwrap();
+
+        let result = parse_devbox_json(&devbox_path, "Test").unwrap();
+        assert_eq!(result.len(), 3);
+
+        let help = result.iter().find(|s| s.name == "help").unwrap();
+        assert_eq!(help.commands[0], "jq .shell.scripts devbox.json");
+
+        let all = result.iter().find(|s| s.name == "all").unwrap();
+        assert_eq!(all.commands[0], "npx nx run-many -t all");
+
+        let venv = result.iter().find(|s| s.name == "venv").unwrap();
+        assert_eq!(venv.commands[0], ". $VENV_DIR/bin/activate");
+    }
 }
