@@ -24,25 +24,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Get latest Devbox version
-        id: devbox-version
-        run: |
-          latest_url="https://releases.jetify.com/devbox/stable/version"
-          tmp_file=$(mktemp)
-          if curl --fail --silent --location --output "${tmp_file}" "${latest_url}" && [ -s "${tmp_file}" ]; then
-            latest_version=$(cat "${tmp_file}")
-            echo "Found devbox latest version ${latest_version}."
-            echo "version=${latest_version}" >> $GITHUB_OUTPUT
-          else
-            echo "ERROR: unable to find the latest devbox version."
-            exit 1
-          fi
-
       - name: Install Devbox
         uses: jetify-com/devbox-install-action@v0.14.0
         with:
           enable-cache: true
-          devbox-version: ${{ steps.devbox-version.outputs.version }}
 
       - name: Run tests
         run: devbox run test
