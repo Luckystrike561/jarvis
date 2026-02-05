@@ -108,7 +108,7 @@ async fn run_application(args: Args) -> Result<()> {
         eprintln!("Searched in: {}", current_dir.display());
         eprintln!("Also checked: ./script/, ./scripts/, ./jarvis/ (if they exist)");
         eprintln!(
-            "\nPlease add bash scripts (.sh) or Node.js projects (package.json) to get started."
+            "\nPlease add bash scripts (.sh), package.json, devbox.json, or Taskfile.yml to get started."
         );
         eprintln!("\nExample bash script format:");
         eprintln!(r#"  #!/usr/bin/env bash"#);
@@ -194,6 +194,28 @@ async fn run_application(args: Args) -> Result<()> {
                                 emoji: None, // devbox scripts don't have emoji support yet
                                 ignored: false, // devbox scripts are never ignored
                                 script_type: script::ScriptType::DevboxJson,
+                            })
+                            .collect();
+                        all_functions.extend(functions);
+                    }
+                    Err(e) => {
+                        parse_errors.push((script_file.path.display().to_string(), e));
+                    }
+                }
+            }
+            script::ScriptType::Task => {
+                match script::list_tasks(&script_file.path, &script_file.category) {
+                    Ok(task_tasks) => {
+                        let functions: Vec<script::ScriptFunction> = task_tasks
+                            .into_iter()
+                            .map(|task_task| script::ScriptFunction {
+                                name: task_task.name,
+                                display_name: task_task.display_name,
+                                category: task_task.category,
+                                description: task_task.description,
+                                emoji: None,
+                                ignored: false,
+                                script_type: script::ScriptType::Task,
                             })
                             .collect();
                         all_functions.extend(functions);
@@ -732,6 +754,7 @@ test_function() {
                 }
                 script::ScriptType::PackageJson => {}
                 script::ScriptType::DevboxJson => {}
+                script::ScriptType::Task => {}
             }
         }
 
@@ -829,12 +852,11 @@ async fn execute_selected_function(
     let func_name = func.name.clone();
     let category = func.category.clone();
     let display_name = func.display_name.clone();
-    let script_type = func.script_type.clone();
 
     // Find the script file matching both category and script type
     if let Some(script_file) = script_files
         .iter()
-        .find(|s| s.category == category && s.script_type == script_type)
+        .find(|s| s.category == category && s.script_type == func.script_type)
     {
         // Suspend TUI for interactive execution
         suspend_tui(terminal)?;
@@ -845,7 +867,7 @@ async fn execute_selected_function(
         println!("╚════════════════════════════════════════╝\n");
 
         // Execute based on script type
-        let exit_code = match &script_file.script_type {
+        let exit_code = match script_file.script_type {
             script::ScriptType::Bash => {
                 script::execute_function_interactive(&script_file.path, &func_name)?
             }
@@ -868,6 +890,9 @@ async fn execute_selected_function(
                     )
                 })?;
                 script::execute_devbox_script_interactive(devbox_dir, &func_name)?
+            }
+            script::ScriptType::Task => {
+                script::execute_task_interactive(&script_file.path, &func_name)?
             }
         };
 

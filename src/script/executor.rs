@@ -108,6 +108,47 @@ pub fn execute_npm_script_interactive(package_dir: &Path, script_name: &str) -> 
     Ok(status.code().unwrap_or(1))
 }
 
+/// Execute a Task (go-task) task interactively with full terminal access
+pub fn execute_task_interactive(taskfile_path: &Path, task_name: &str) -> Result<i32> {
+    if !taskfile_path.exists() {
+        anyhow::bail!("Taskfile not found: {}", taskfile_path.display());
+    }
+
+    if !taskfile_path.is_file() {
+        anyhow::bail!("Path is not a file: {}", taskfile_path.display());
+    }
+
+    if task_name.is_empty() {
+        anyhow::bail!("Task name cannot be empty");
+    }
+
+    let dir = taskfile_path.parent().with_context(|| {
+        format!(
+            "Failed to get parent directory of: {}",
+            taskfile_path.display()
+        )
+    })?;
+
+    let status = Command::new("task")
+        .arg("--taskfile")
+        .arg(taskfile_path)
+        .arg(task_name)
+        .current_dir(dir)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .with_context(|| {
+            format!(
+                "Failed to execute task '{}' from {}",
+                task_name,
+                taskfile_path.display()
+            )
+        })?;
+
+    Ok(status.code().unwrap_or(1))
+}
+
 /// Execute a devbox script interactively with full terminal access
 pub fn execute_devbox_script_interactive(devbox_dir: &Path, script_name: &str) -> Result<i32> {
     // Validate inputs
@@ -475,6 +516,27 @@ custom_exit() {
         fs::write(&devbox_json, content).unwrap();
 
         let result = execute_devbox_script_interactive(temp_dir.path(), "");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("cannot be empty"));
+    }
+
+    #[test]
+    fn test_execute_task_interactive_nonexistent_path() {
+        let temp_dir = TempDir::new().unwrap();
+        let taskfile = temp_dir.path().join("Taskfile.yml");
+
+        let result = execute_task_interactive(&taskfile, "build");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[test]
+    fn test_execute_task_interactive_empty_name() {
+        let temp_dir = TempDir::new().unwrap();
+        let taskfile = temp_dir.path().join("Taskfile.yml");
+        fs::write(&taskfile, "version: '3'\ntasks: {}").unwrap();
+
+        let result = execute_task_interactive(&taskfile, "");
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("cannot be empty"));
     }

@@ -1,0 +1,34 @@
+# Example Taskfile for testing Jarvis Task (go-task) integration
+# See: https://taskfile.dev/
+version: '3'
+
+vars:
+  GREETING: Hello, World!
+
+tasks:
+  default:
+    desc: Default task
+    cmds:
+      - echo "{{.GREETING}}"
+
+  build:
+    desc: Build the project
+    cmds:
+      - cargo build
+
+  test:
+    desc: Run tests
+    deps: [build]
+    cmds:
+      - cargo test
+
+  check:
+    desc: Run clippy and format check
+    cmds:
+      - cargo clippy -- -D warnings
+      - cargo fmt -- --check
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - cargo clean

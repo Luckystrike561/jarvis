@@ -3,6 +3,7 @@ pub mod discovery;
 pub mod executor;
 pub mod npm_parser;
 pub mod parser;
+pub mod task_parser;
 
 pub use devbox_parser::parse_devbox_json;
 pub use discovery::{
@@ -10,6 +11,8 @@ pub use discovery::{
 };
 pub use executor::{
     execute_devbox_script_interactive, execute_function_interactive, execute_npm_script_interactive,
+    execute_task_interactive,
 };
 pub use npm_parser::parse_package_json;
 pub use parser::{parse_script, ScriptFunction};
+pub use task_parser::{is_task_available, list_tasks, parse_task_list_json, TaskTask};
