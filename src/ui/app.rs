@@ -1,14 +1,44 @@
-use crate::script::ScriptFunction;
-use std::collections::HashMap;
+//! # Application State Management
+//!
+//! This module contains the core application state and logic for the Jarvis TUI.
+//!
+//! ## Overview
+//!
+//! The [`App`] struct holds all application state including:
+//! - List of discovered script functions
+//! - Current selection and scroll positions
+//! - Search mode and query state
+//! - UI focus (which pane is active)
+//! - Expanded/collapsed category state
+//! - Frequently used commands tracking
+//!
+//! ## Navigation Model
+//!
+//! Scripts are displayed in a tree structure with categories:
+//!
+//! ```text
+//! ▼ ⭐ Frequently Used    (pinned at top when usage exists)
+//!   ├─ build
+//!   └─ test
+//! ▶ Category A          (collapsed)
+//! ▼ Category B          (expanded)
+//!   ├─ function_one
+//!   └─ function_two
+//! ▶ Category C          (collapsed)
+//! ```
+//!
+//! The [`TreeItem`] enum represents items in this tree view.
+//!
+//! ## Focus Panes
+//!
+//! The UI has multiple focusable panes managed by [`FocusPane`]:
+//! - `ScriptList` - The main script/category tree
+//! - `Details` - The details panel showing script info
+//! - `Output` - The output panel showing execution results
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[allow(dead_code)]
-pub enum AppState {
-    MainMenu,
-    CategoryView,
-    Executing,
-    ViewingOutput,
-}
+use crate::script::ScriptFunction;
+use crate::usage::FREQUENTLY_USED_CATEGORY;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum FocusPane {
@@ -18,12 +48,10 @@ pub enum FocusPane {
 }
 
 pub struct App {
-    #[allow(dead_code)]
-    pub state: AppState,
     pub functions: Vec<ScriptFunction>,
+    /// Functions that appear in the "Frequently Used" category
+    pub frequent_functions: Vec<ScriptFunction>,
     pub selected_index: usize,
-    #[allow(dead_code)]
-    pub category_filter: Option<String>,
     pub output: Vec<String>,
     pub output_scroll: usize,
     pub script_scroll: usize,
@@ -40,10 +68,9 @@ pub struct App {
 impl App {
     pub fn new(functions: Vec<ScriptFunction>, project_title: String) -> Self {
         Self {
-            state: AppState::MainMenu,
             functions,
+            frequent_functions: Vec::new(),
             selected_index: 0,
-            category_filter: None,
             output: Vec::new(),
             output_scroll: 0,
             script_scroll: 0,
@@ -56,6 +83,11 @@ impl App {
             category_display_names: HashMap::new(),
             project_title,
         }
+    }
+
+    /// Set the frequently used functions to display in the special category
+    pub fn set_frequent_functions(&mut self, functions: Vec<ScriptFunction>) {
+        self.frequent_functions = functions;
     }
 
     pub fn set_category_display_names(&mut self, display_names: HashMap<String, String>) {
@@ -165,9 +197,39 @@ impl App {
     }
 
     // Get all items in tree view (categories and their functions)
+    // The "Frequently Used" category appears first if there are any frequent functions
     pub fn tree_items(&self) -> Vec<TreeItem> {
         let mut items = Vec::new();
-        let categories = self.categories();
+
+        // Add "Frequently Used" category first (if there are frequent functions)
+        if !self.frequent_functions.is_empty() {
+            let frequent_category = FREQUENTLY_USED_CATEGORY.to_string();
+
+            // Filter frequent functions by search
+            let frequent_funcs: Vec<&ScriptFunction> = self
+                .frequent_functions
+                .iter()
+                .filter(|f| self.matches_search(f))
+                .collect();
+
+            // Only show if there are matching functions (when searching)
+            if !self.search_mode || !frequent_funcs.is_empty() {
+                items.push(TreeItem::Category(frequent_category.clone()));
+
+                // Auto-expand when searching, or show if manually expanded
+                if self.search_mode || self.is_category_expanded(&frequent_category) {
+                    for func in frequent_funcs {
+                        // Create a copy with the "Frequently Used" category
+                        let mut freq_func = func.clone();
+                        freq_func.category = frequent_category.clone();
+                        items.push(TreeItem::Function(freq_func));
+                    }
+                }
+            }
+        }
+
+        // Add regular categories
+        let categories = self.regular_categories();
 
         for category in categories {
             // Filter functions for this category
@@ -280,19 +342,23 @@ impl App {
         self.script_scroll = 0;
     }
 
-    #[allow(dead_code)]
-    pub fn filtered_functions(&self) -> Vec<&ScriptFunction> {
-        match &self.category_filter {
-            Some(category) => self
-                .functions
-                .iter()
-                .filter(|f| &f.category == category)
-                .collect(),
-            None => self.functions.iter().collect(),
+    /// Get all categories including the "Frequently Used" category if applicable
+    pub fn categories(&self) -> Vec<String> {
+        let mut cats = Vec::new();
+
+        // Add "Frequently Used" first if there are frequent functions
+        if !self.frequent_functions.is_empty() {
+            cats.push(FREQUENTLY_USED_CATEGORY.to_string());
         }
+
+        // Add regular categories
+        cats.extend(self.regular_categories());
+
+        cats
     }
 
-    pub fn categories(&self) -> Vec<String> {
+    /// Get regular categories (excluding "Frequently Used")
+    fn regular_categories(&self) -> Vec<String> {
         let mut cats: Vec<String> = self
             .functions
             .iter()
@@ -302,16 +368,6 @@ impl App {
             .collect();
         cats.sort();
         cats
-    }
-
-    #[allow(dead_code)]
-    pub fn selected_function(&self) -> Option<&ScriptFunction> {
-        if let Some(TreeItem::Function(func)) = self.selected_item() {
-            // Find the function in our list by name
-            self.functions.iter().find(|f| f.name == func.name)
-        } else {
-            None
-        }
     }
 }
 
@@ -629,5 +685,76 @@ mod tests {
 
         // Should show Utilities category + func3
         assert_eq!(items.len(), 2);
+    }
+
+    #[test]
+    fn test_app_frequent_functions() {
+        let functions = create_test_functions();
+        let mut app = App::new(functions.clone(), "Test".to_string());
+
+        // No frequent functions initially
+        assert!(app.frequent_functions.is_empty());
+        assert_eq!(app.categories().len(), 2);
+
+        // Set frequent functions
+        app.set_frequent_functions(vec![functions[0].clone()]);
+
+        // Should now have 3 categories (Frequently Used + System + Utilities)
+        assert_eq!(app.categories().len(), 3);
+        assert_eq!(app.categories()[0], FREQUENTLY_USED_CATEGORY);
+    }
+
+    #[test]
+    fn test_app_tree_items_with_frequent() {
+        let functions = create_test_functions();
+        let mut app = App::new(functions.clone(), "Test".to_string());
+
+        // Set frequent functions
+        app.set_frequent_functions(vec![functions[0].clone()]);
+
+        // Expand the frequently used category
+        app.expand_category(FREQUENTLY_USED_CATEGORY);
+
+        let items = app.tree_items();
+
+        // Should show: Frequently Used category + 1 func + System category + Utilities category
+        assert_eq!(items.len(), 4);
+
+        // First item should be Frequently Used category
+        match &items[0] {
+            TreeItem::Category(name) => assert_eq!(name, FREQUENTLY_USED_CATEGORY),
+            _ => panic!("Expected Frequently Used category first"),
+        }
+
+        // Second item should be the frequent function
+        match &items[1] {
+            TreeItem::Function(func) => {
+                assert_eq!(func.name, "func1");
+                assert_eq!(func.category, FREQUENTLY_USED_CATEGORY);
+            }
+            _ => panic!("Expected function"),
+        }
+    }
+
+    #[test]
+    fn test_app_frequent_search_filtering() {
+        let functions = create_test_functions();
+        let mut app = App::new(functions.clone(), "Test".to_string());
+
+        // Set all functions as frequent
+        app.set_frequent_functions(functions.clone());
+
+        app.enter_search_mode();
+        app.search_push_char('f');
+        app.search_push_char('u');
+        app.search_push_char('n');
+        app.search_push_char('c');
+        app.search_push_char('1');
+
+        let items = app.tree_items();
+
+        // Should show: Frequently Used + func1 + System + func1
+        // (func1 appears in both Frequently Used and System)
+        assert_eq!(items.len(), 4);
     }
 }

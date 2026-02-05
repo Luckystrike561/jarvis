@@ -1,3 +1,40 @@
+//! # UI Rendering
+//!
+//! This module handles all rendering logic for the Jarvis TUI.
+//!
+//! ## Overview
+//!
+//! The [`render`] function is the main entry point that draws the entire UI
+//! using the [ratatui] library. It composes multiple rendering helpers to
+//! build the complete interface.
+//!
+//! ## Layout Structure
+//!
+//! The UI is rendered in layers:
+//!
+//! 1. **Header** - Project title and branding
+//! 2. **Search Bar** - Visible when search mode is active
+//! 3. **Body** - Split into left (script list) and right (details/output) panes
+//! 4. **Footer** - Keyboard shortcuts help
+//!
+//! ## Rendering Helpers
+//!
+//! - `render_header` - Draws the top header bar
+//! - `render_search_bar` - Draws the search input when active
+//! - `render_script_tree` - Draws the categorized script list
+//! - `render_details` - Draws the selected script details
+//! - `render_output` - Draws execution output
+//! - `render_footer` - Draws the keyboard shortcuts
+//! - `render_info_modal` - Draws the info popup overlay
+//!
+//! ## Styling
+//!
+//! The UI uses a consistent color scheme:
+//! - Cyan for headers and active elements
+//! - Yellow for categories and highlights
+//! - Green for success indicators
+//! - White/Gray for regular text
+
 use crate::ui::app::{App, FocusPane, TreeItem};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},

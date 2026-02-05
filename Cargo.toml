@@ -1,6 +1,6 @@
 [package]
 name = "jarvis-tui"
-version = "0.1.9"
+version = "0.1.10"
 edition = "2021"
 authors = ["Luckystrike561"]
 description = "A beautiful TUI for managing and executing scripts with zero configuration"
@@ -10,6 +10,10 @@ homepage = "https://github.com/Luckystrike561/jarvis"
 readme = "README.md"
 keywords = ["tui", "terminal", "scripts", "bash", "cli"]
 categories = ["command-line-utilities", "development-tools"]
+
+[lib]
+name = "jarvis"
+path = "src/lib.rs"
 
 [[bin]]
 name = "jarvis"
@@ -25,6 +29,8 @@ walkdir = "2"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+directories = "5"
+chrono = { version = "0.4", features = ["serde"] }
 
 [dev-dependencies]
 tempfile = "3"

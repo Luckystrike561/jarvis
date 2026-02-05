@@ -1,4 +1,41 @@
-//! Parser for Task (go-task/Taskfile) - uses `task --list-all --json` output.
+//! # Task (go-task) Parser
+//!
+//! This module parses Taskfile configurations using the `task` CLI's JSON output
+//! for display in the Jarvis TUI.
+//!
+//! ## Overview
+//!
+//! Unlike other parsers that read configuration files directly, this parser
+//! invokes `task --list-all --json` to get task information. This approach:
+//!
+//! - Handles complex Taskfile includes and imports
+//! - Respects task visibility and internal tasks
+//! - Gets accurate task descriptions from the CLI
+//!
+//! ## Key Types
+//!
+//! - [`TaskListOutput`] - JSON output from `task --list-all --json`
+//! - [`TaskInfo`] - Single task metadata from the CLI
+//! - [`TaskTask`] - Represents a task with display metadata for the TUI
+//! - [`is_task_available`] - Checks if `task` CLI is installed
+//! - [`list_tasks`] - Main function to list tasks from a Taskfile
+//!
+//! ## CLI Integration
+//!
+//! The parser runs:
+//! ```bash
+//! task --list-all --json --taskfile <path>
+//! ```
+//!
+//! And parses the JSON output which includes:
+//! - Task name and description
+//! - Task summary (fallback for description)
+//! - Location information (file, line, column)
+//!
+//! ## Availability Caching
+//!
+//! The `task` binary availability is cached using [`OnceLock`] to avoid
+//! repeated process spawning during discovery.
 
 use anyhow::{Context, Result};
 use serde::Deserialize;
