@@ -2,15 +2,6 @@ use crate::script::ScriptFunction;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[allow(dead_code)]
-pub enum AppState {
-    MainMenu,
-    CategoryView,
-    Executing,
-    ViewingOutput,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum FocusPane {
     ScriptList,
     Details,
@@ -18,12 +9,8 @@ pub enum FocusPane {
 }
 
 pub struct App {
-    #[allow(dead_code)]
-    pub state: AppState,
     pub functions: Vec<ScriptFunction>,
     pub selected_index: usize,
-    #[allow(dead_code)]
-    pub category_filter: Option<String>,
     pub output: Vec<String>,
     pub output_scroll: usize,
     pub script_scroll: usize,
@@ -40,10 +27,8 @@ pub struct App {
 impl App {
     pub fn new(functions: Vec<ScriptFunction>, project_title: String) -> Self {
         Self {
-            state: AppState::MainMenu,
             functions,
             selected_index: 0,
-            category_filter: None,
             output: Vec::new(),
             output_scroll: 0,
             script_scroll: 0,
@@ -280,18 +265,6 @@ impl App {
         self.script_scroll = 0;
     }
 
-    #[allow(dead_code)]
-    pub fn filtered_functions(&self) -> Vec<&ScriptFunction> {
-        match &self.category_filter {
-            Some(category) => self
-                .functions
-                .iter()
-                .filter(|f| &f.category == category)
-                .collect(),
-            None => self.functions.iter().collect(),
-        }
-    }
-
     pub fn categories(&self) -> Vec<String> {
         let mut cats: Vec<String> = self
             .functions
@@ -302,16 +275,6 @@ impl App {
             .collect();
         cats.sort();
         cats
-    }
-
-    #[allow(dead_code)]
-    pub fn selected_function(&self) -> Option<&ScriptFunction> {
-        if let Some(TreeItem::Function(func)) = self.selected_item() {
-            // Find the function in our list by name
-            self.functions.iter().find(|f| f.name == func.name)
-        } else {
-            None
-        }
     }
 }
 
