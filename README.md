@@ -20,9 +20,9 @@ A beautiful TUI for managing and executing scripts with zero configuration.
 
 ## Features
 
-- **Zero Configuration** - Auto-discovers bash functions, npm scripts, and devbox scripts
+- **Zero Configuration** - Auto-discovers bash functions, npm scripts, devbox scripts, and Taskfile tasks
 - **Beautiful TUI** - Modern terminal interface built with Ratatui
-- **Multi-Language Support** - Works with `.sh` files, `package.json`, and `devbox.json`
+- **Multi-Language Support** - Works with `.sh` files, `package.json`, `devbox.json`, and `Taskfile.yml`
 - **Single Binary** - Compile once, run anywhere
 
 ## Installation
@@ -98,6 +98,36 @@ deploy_app() {
   }
 }
 ```
+
+**Devbox Scripts** - From `devbox.json`:
+
+```json
+{
+  "shell": {
+    "scripts": {
+      "build": "cargo build",
+      "test": "cargo test"
+    }
+  }
+}
+```
+
+**Task (go-task)** - From `Taskfile.yml`:
+
+```yaml
+version: '3'
+tasks:
+  build:
+    desc: Build the project
+    cmds:
+      - cargo build
+  test:
+    desc: Run tests
+    cmds:
+      - cargo test
+```
+
+> **Note:** Task support requires the `task` binary to be installed. See [taskfile.dev](https://taskfile.dev) for installation instructions.
 
 ### Function Annotations
 

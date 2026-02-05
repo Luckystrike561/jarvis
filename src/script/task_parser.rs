@@ -95,10 +95,11 @@ pub fn list_tasks(taskfile_path: &Path, category: &str) -> Result<Vec<TaskTask>>
         .with_context(|| format!("Failed to run task for: {}", taskfile_path.display()))?;
 
     if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
         anyhow::bail!(
             "task --list-all failed for {}: {}",
             taskfile_path.display(),
-            String::from_utf8_lossy(&output.stderr)
+            stderr,
         );
     }
 
