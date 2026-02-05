@@ -14,7 +14,9 @@ pub use discovery::{
     ScriptType,
 };
 pub use executor::{
-    execute_devbox_script_interactive, execute_function_interactive, execute_npm_script_interactive,
+    execute_devbox_script_interactive,
+    execute_function_interactive,
+    execute_npm_script_interactive,
     execute_task_interactive,
 };
 pub use npm_parser::parse_package_json;

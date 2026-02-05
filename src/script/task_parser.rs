@@ -4,8 +4,12 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::OnceLock;
 
 use crate::script::discovery::format_display_name;
+
+/// Cache for task availability check (checked once per process)
+static TASK_AVAILABLE: OnceLock<bool> = OnceLock::new();
 
 /// JSON output from `task --list-all --json --taskfile <path>`
 #[derive(Debug, Clone, Deserialize)]
@@ -73,13 +77,15 @@ pub fn parse_task_list_json(json_str: &str, category: &str) -> Result<Vec<TaskTa
 
 /// Check if the `task` binary is available.
 pub fn is_task_available() -> bool {
-    Command::new("task")
-        .arg("--version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+    *TASK_AVAILABLE.get_or_init(|| {
+        Command::new("task")
+            .arg("--version")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    })
 }
 
 /// Run `task --list-all --json --taskfile <path>` and parse the result.
@@ -103,10 +109,11 @@ pub fn list_tasks(taskfile_path: &Path, category: &str) -> Result<Vec<TaskTask>>
         );
     }
 
-    let json_str = String::from_utf8(output.stdout)
-        .with_context(|| "task output was not valid UTF-8")?;
-
-    parse_task_list_json(json_str.trim(), category)
+    let output_str = match String::from_utf8(output.stdout) {
+        Ok(s) => s,
+        Err(_) => String::from_utf8_lossy(&output.stdout).to_string(),
+    };
+    parse_task_list_json(output_str.trim(), category)
 }
 
 #[cfg(test)]
