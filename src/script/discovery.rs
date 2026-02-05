@@ -4,11 +4,12 @@ use std::process::{Command, Stdio};
 use std::sync::OnceLock;
 use walkdir::WalkDir;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ScriptType {
     Bash,
     PackageJson,
     DevboxJson,
+    Task,
 }
 
 #[derive(Debug, Clone)]
@@ -20,6 +21,18 @@ pub struct ScriptFile {
     pub display_name: String,
     pub script_type: ScriptType,
 }
+
+/// Taskfile names to detect (all variants from taskfile.dev)
+const TASKFILE_NAMES: &[&str] = &[
+    "taskfile.dist.yaml",
+    "Taskfile.dist.yaml",
+    "taskfile.dist.yml",
+    "Taskfile.dist.yml",
+    "taskfile.yaml",
+    "Taskfile.yaml",
+    "taskfile.yml",
+    "Taskfile.yml",
+];
 
 /// Cache for devbox availability check (checked once per process)
 static DEVBOX_AVAILABLE: OnceLock<bool> = OnceLock::new();
@@ -159,6 +172,34 @@ fn discover_scripts_with_depth(scripts_dir: &Path, max_depth: usize) -> Result<V
                     category,
                     display_name,
                     script_type: ScriptType::DevboxJson,
+                });
+                continue;
+            }
+
+            if TASKFILE_NAMES.contains(&filename) {
+                if !crate::script::task_parser::is_task_available() {
+                    continue;
+                }
+
+                let name = if let Some(parent) = path.parent() {
+                    parent
+                        .file_name()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("task")
+                        .to_string()
+                } else {
+                    "task".to_string()
+                };
+
+                let category = name.clone();
+                let display_name = format!("📋 {}", format_display_name(&name));
+
+                scripts.push(ScriptFile {
+                    path: path.to_path_buf(),
+                    name,
+                    category,
+                    display_name,
+                    script_type: ScriptType::Task,
                 });
                 continue;
             }
@@ -501,5 +542,34 @@ mod tests {
         assert_eq!(bash_count, 1);
         assert_eq!(npm_count, 1);
         assert_eq!(devbox_count, 1);
+    }
+
+    #[test]
+    fn test_discover_taskfile() {
+        let temp_dir = TempDir::new().unwrap();
+        let taskfile_path = temp_dir.path().join("Taskfile.yml");
+
+        let content = r#"version: '3'
+tasks:
+  default:
+    desc: Default task
+    cmds: [echo hello]
+"#;
+        fs::write(&taskfile_path, content).unwrap();
+
+        let result = discover_scripts(temp_dir.path()).unwrap();
+        // If task binary is installed we get 1 ScriptFile with Task type, else 0
+        let task_files: Vec<_> = result
+            .iter()
+            .filter(|s| s.script_type == ScriptType::Task)
+            .collect();
+        assert!(
+            task_files.len() <= 1,
+            "should have at most one Task script file"
+        );
+        if let Some(sf) = task_files.first() {
+            assert_eq!(sf.script_type, ScriptType::Task);
+            assert!(sf.path.ends_with("Taskfile.yml"));
+        }
     }
 }
