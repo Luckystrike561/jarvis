@@ -24,6 +24,9 @@ jobs:
     # Only run this job when triggered by release event (not manual)
     if: github.event_name == 'release'
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
       - name: Wait for version sync workflow
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
