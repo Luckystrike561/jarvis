@@ -43,6 +43,7 @@
 use jarvis::script;
 use jarvis::ui;
 use jarvis::ui::App;
+use jarvis::usage::{UsageTracker, FREQUENTLY_USED_CATEGORY, MAX_FREQUENT_COMMANDS};
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -55,6 +56,7 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 use std::io;
 use std::panic;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 /// Trait for reading terminal events (allows dependency injection for testing)
 trait EventReader {
@@ -322,7 +324,7 @@ async fn run_application(args: Args) -> Result<()> {
 
     let formatted_project_name = script::format_display_name(project_name);
 
-    let mut app = App::new(all_functions, formatted_project_name);
+    let mut app = App::new(all_functions.clone(), formatted_project_name);
 
     // Build category display names map from script files
     let mut category_display_names = std::collections::HashMap::new();
@@ -334,9 +336,45 @@ async fn run_application(args: Args) -> Result<()> {
     }
     app.set_category_display_names(category_display_names);
 
+    // Initialize usage tracking (gracefully handle errors)
+    let usage_tracker = match UsageTracker::new(current_dir.clone()) {
+        Ok(tracker) => Some(Arc::new(Mutex::new(tracker))),
+        Err(e) => {
+            eprintln!("Warning: Could not initialize usage tracking: {}", e);
+            None
+        }
+    };
+
+    // Load frequently used functions into the app
+    if let Some(ref tracker) = usage_tracker {
+        if let Ok(tracker_guard) = tracker.lock() {
+            let frequent_entries = tracker_guard.get_frequent(MAX_FREQUENT_COMMANDS);
+            let frequent_functions: Vec<script::ScriptFunction> = frequent_entries
+                .iter()
+                .filter_map(|entry| {
+                    // Find the matching function in all_functions
+                    all_functions
+                        .iter()
+                        .find(|f| {
+                            f.name == entry.function_name && f.script_type == entry.script_type
+                        })
+                        .cloned()
+                })
+                .collect();
+            app.set_frequent_functions(frequent_functions);
+        }
+    }
+
     // Run the app and ensure cleanup happens even on error
     let mut event_reader = CrosstermEventReader;
-    let run_result = run_app(&mut terminal, &mut app, &script_files, &mut event_reader).await;
+    let run_result = run_app(
+        &mut terminal,
+        &mut app,
+        &script_files,
+        &mut event_reader,
+        usage_tracker.clone(),
+    )
+    .await;
 
     // Restore terminal (always runs, even if run_app failed)
     let cleanup_result = cleanup_terminal(&mut terminal);
@@ -530,15 +568,27 @@ async fn execute_selected_function(
     app: &mut App,
     func: &script::ScriptFunction,
     script_files: &[script::ScriptFile],
+    usage_tracker: Option<Arc<Mutex<UsageTracker>>>,
 ) -> Result<()> {
     let func_name = func.name.clone();
-    let category = func.category.clone();
     let display_name = func.display_name.clone();
+
+    // If the function is from "Frequently Used" category, find the original category
+    let original_category = if func.category == FREQUENTLY_USED_CATEGORY {
+        // Look up the original function to get its real category
+        app.functions
+            .iter()
+            .find(|f| f.name == func_name && f.script_type == func.script_type)
+            .map(|f| f.category.clone())
+            .unwrap_or_else(|| func.category.clone())
+    } else {
+        func.category.clone()
+    };
 
     // Find the script file matching both category and script type
     if let Some(script_file) = script_files
         .iter()
-        .find(|s| s.category == category && s.script_type == func.script_type)
+        .find(|s| s.category == original_category && s.script_type == func.script_type)
     {
         // Suspend TUI for interactive execution
         suspend_tui(terminal)?;
@@ -598,11 +648,22 @@ async fn execute_selected_function(
         app.output.clear();
         app.reset_output_scroll();
         app.output.push(format!("Function: {}", display_name));
-        app.output.push(format!("Category: {}", category));
+        app.output.push(format!("Category: {}", original_category));
         app.output.push("".to_string());
         if exit_code == 0 {
             app.output
                 .push("Status: ✅ Completed successfully!".to_string());
+
+            // Record usage on successful execution
+            if let Some(ref tracker) = usage_tracker {
+                if let Ok(mut tracker_guard) = tracker.lock() {
+                    if let Err(e) =
+                        tracker_guard.record(&func_name, func.script_type, &original_category)
+                    {
+                        eprintln!("Warning: Failed to record usage: {}", e);
+                    }
+                }
+            }
         } else {
             app.output
                 .push(format!("Status: ❌ Failed with exit code: {}", exit_code));
@@ -620,6 +681,7 @@ async fn run_app(
     app: &mut App,
     script_files: &[script::ScriptFile],
     event_reader: &mut dyn EventReader,
+    usage_tracker: Option<Arc<Mutex<UsageTracker>>>,
 ) -> Result<()> {
     loop {
         terminal
@@ -656,7 +718,14 @@ async fn run_app(
                     KeyCode::Enter => {
                         // Execute function if one is selected
                         if let Some(ui::app::TreeItem::Function(func)) = app.selected_item() {
-                            execute_selected_function(terminal, app, &func, script_files).await?;
+                            execute_selected_function(
+                                terminal,
+                                app,
+                                &func,
+                                script_files,
+                                usage_tracker.clone(),
+                            )
+                            .await?;
                         }
                     }
                     KeyCode::Char(c) => {
@@ -712,8 +781,14 @@ async fn run_app(
                                     app.toggle_category(&category);
                                 }
                                 ui::app::TreeItem::Function(func) => {
-                                    execute_selected_function(terminal, app, &func, script_files)
-                                        .await?;
+                                    execute_selected_function(
+                                        terminal,
+                                        app,
+                                        &func,
+                                        script_files,
+                                        usage_tracker.clone(),
+                                    )
+                                    .await?;
                                 }
                             }
                         }

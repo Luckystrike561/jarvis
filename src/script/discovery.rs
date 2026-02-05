@@ -33,12 +33,13 @@
 //! - [`format_display_name`] - Converts snake_case to Title Case
 
 use anyhow::{Context, Result};
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
 use walkdir::WalkDir;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum ScriptType {
     Bash,
     PackageJson,
