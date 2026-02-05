@@ -1,3 +1,48 @@
+//! # Script Executor
+//!
+//! This module provides interactive execution of scripts and functions with full
+//! terminal access. It handles the actual running of discovered scripts, ensuring
+//! that interactive tools (like `gum`, `fzf`, etc.) work correctly.
+//!
+//! ## Supported Script Types
+//!
+//! | Type | Function | Command Pattern |
+//! |------|----------|-----------------|
+//! | Bash | `execute_function_interactive` | `source script.sh && function_name` |
+//! | npm | `execute_npm_script_interactive` | `npm run script_name` |
+//! | Devbox | `execute_devbox_script_interactive` | `devbox run script_name` |
+//! | Task | `execute_task_interactive` | `task --taskfile path task_name` |
+//!
+//! ## Key Design Decisions
+//!
+//! ### Full Terminal Access
+//!
+//! All execution functions inherit stdin, stdout, and stderr from the parent process:
+//!
+//! ```ignore
+//! Command::new("bash")
+//!     .stdin(Stdio::inherit())
+//!     .stdout(Stdio::inherit())
+//!     .stderr(Stdio::inherit())
+//! ```
+//!
+//! This allows scripts to:
+//! - Read user input interactively
+//! - Display colored output
+//! - Use TUI tools like `gum`, `fzf`, `dialog`
+//!
+//! ### Working Directory
+//!
+//! Each executor changes to the script's directory before execution, ensuring
+//! relative paths in scripts work correctly.
+//!
+//! ### Input Validation
+//!
+//! All executors validate:
+//! - Path existence and type (file vs directory)
+//! - Required config files (package.json, devbox.json, Taskfile)
+//! - Valid identifiers (for bash function names)
+
 use anyhow::{Context, Result};
 use std::path::Path;
 use std::process::{Command, Stdio};

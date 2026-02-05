@@ -1,3 +1,53 @@
+//! # Bash Script Parser
+//!
+//! This module parses bash script files to extract function definitions
+//! and their metadata annotations.
+//!
+//! ## Supported Function Formats
+//!
+//! Both standard bash function syntaxes are supported:
+//!
+//! ```bash
+//! # Style 1: name() { }
+//! my_function() {
+//!     echo "Hello"
+//! }
+//!
+//! # Style 2: function name() { }
+//! function my_function() {
+//!     echo "Hello"
+//! }
+//! ```
+//!
+//! ## Metadata Annotations
+//!
+//! Functions can be annotated with special comments:
+//!
+//! ```bash
+//! # @emoji 🚀
+//! # @description Deploy the application to production
+//! deploy_app() {
+//!     ./deploy.sh
+//! }
+//!
+//! # @ignore
+//! _internal_helper() {
+//!     # This function won't appear in the TUI
+//! }
+//! ```
+//!
+//! ### Available Annotations
+//!
+//! | Annotation | Description |
+//! |------------|-------------|
+//! | `@emoji <emoji>` | Display emoji prefix in the TUI |
+//! | `@description <text>` | Custom description for the details panel |
+//! | `@ignore` | Hide the function from the TUI |
+//!
+//! ## Key Types
+//!
+//! - [`ScriptFunction`] - Represents a parsed function with its metadata
+
 use anyhow::{Context, Result};
 use regex::Regex;
 use std::fs;

@@ -1,3 +1,37 @@
+//! # Application State Management
+//!
+//! This module contains the core application state and logic for the Jarvis TUI.
+//!
+//! ## Overview
+//!
+//! The [`App`] struct holds all application state including:
+//! - List of discovered script functions
+//! - Current selection and scroll positions
+//! - Search mode and query state
+//! - UI focus (which pane is active)
+//! - Expanded/collapsed category state
+//!
+//! ## Navigation Model
+//!
+//! Scripts are displayed in a tree structure with categories:
+//!
+//! ```text
+//! ▶ Category A          (collapsed)
+//! ▼ Category B          (expanded)
+//!   ├─ function_one
+//!   └─ function_two
+//! ▶ Category C          (collapsed)
+//! ```
+//!
+//! The [`TreeItem`] enum represents items in this tree view.
+//!
+//! ## Focus Panes
+//!
+//! The UI has multiple focusable panes managed by [`FocusPane`]:
+//! - `ScriptList` - The main script/category tree
+//! - `Details` - The details panel showing script info
+//! - `Output` - The output panel showing execution results
+
 use crate::script::ScriptFunction;
 use std::collections::HashMap;
 
