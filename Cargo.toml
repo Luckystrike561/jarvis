@@ -11,6 +11,10 @@ readme = "README.md"
 keywords = ["tui", "terminal", "scripts", "bash", "cli"]
 categories = ["command-line-utilities", "development-tools"]
 
+[lib]
+name = "jarvis"
+path = "src/lib.rs"
+
 [[bin]]
 name = "jarvis"
 path = "src/main.rs"
