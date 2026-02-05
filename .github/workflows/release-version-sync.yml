@@ -26,20 +26,30 @@ jobs:
 
       - name: Extract version from release tag
         id: extract_version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           # Use manual input if provided, otherwise extract from release tag
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            VERSION="${{ inputs.version }}"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            VERSION="$INPUT_VERSION"
           else
-            VERSION="${{ github.event.release.tag_name }}"
+            VERSION="$RELEASE_TAG"
             VERSION="${VERSION#v}"
+          fi
+          # Validate version format (semver)
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+            echo "ERROR: Invalid version format: $VERSION"
+            exit 1
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Extracted version: $VERSION"
 
       - name: Update Cargo.toml version
+        env:
+          VERSION: ${{ steps.extract_version.outputs.version }}
         run: |
-          VERSION="${{ steps.extract_version.outputs.version }}"
           sed -i "s/^version = .*/version = \"$VERSION\"/" Cargo.toml
           echo "Updated Cargo.toml to version $VERSION"
 
@@ -49,6 +59,8 @@ jobs:
           grep "^version" Cargo.toml
 
       - name: Commit and push changes
+        env:
+          VERSION: ${{ steps.extract_version.outputs.version }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -56,7 +68,7 @@ jobs:
           if git diff --staged --quiet; then
             echo "No changes to commit - version already up to date"
           else
-            git commit -m "chore: bump version to ${{ steps.extract_version.outputs.version }}"
+            git commit -m "chore: bump version to $VERSION"
             git push origin main
             echo "Version successfully updated and pushed to main"
           fi

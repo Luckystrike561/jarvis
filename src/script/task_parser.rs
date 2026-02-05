@@ -111,7 +111,7 @@ pub fn list_tasks(taskfile_path: &Path, category: &str) -> Result<Vec<TaskTask>>
 
     let output_str = match String::from_utf8(output.stdout) {
         Ok(s) => s,
-        Err(_) => String::from_utf8_lossy(&output.stdout).to_string(),
+        Err(e) => String::from_utf8_lossy(e.as_bytes()).to_string(),
     };
     parse_task_list_json(output_str.trim(), category)
 }
