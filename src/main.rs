@@ -1,5 +1,6 @@
-mod script;
-mod ui;
+use jarvis::script;
+use jarvis::ui;
+use jarvis::ui::App;
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -9,11 +10,9 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
-use script::format_display_name;
 use std::io;
 use std::panic;
 use std::path::PathBuf;
-use ui::App;
 
 /// Trait for reading terminal events (allows dependency injection for testing)
 trait EventReader {
@@ -279,7 +278,7 @@ async fn run_application(args: Args) -> Result<()> {
         .and_then(|n| n.to_str())
         .unwrap_or("Project");
 
-    let formatted_project_name = format_display_name(project_name);
+    let formatted_project_name = script::format_display_name(project_name);
 
     let mut app = App::new(all_functions, formatted_project_name);
 
@@ -355,173 +354,6 @@ mod tests {
         Event::Key(KeyEvent::new(code, KeyModifiers::empty()))
     }
 
-    /// Helper to create a test app with mock functions
-    fn create_test_app() -> App {
-        let functions = vec![
-            script::ScriptFunction {
-                name: "test_func1".to_string(),
-                display_name: "Test Function 1".to_string(),
-                category: "test_category".to_string(),
-                description: "Test description 1".to_string(),
-                emoji: Some("🚀".to_string()),
-                ignored: false,
-                script_type: script::ScriptType::Bash,
-            },
-            script::ScriptFunction {
-                name: "test_func2".to_string(),
-                display_name: "Test Function 2".to_string(),
-                category: "test_category".to_string(),
-                description: "Test description 2".to_string(),
-                emoji: None,
-                ignored: false,
-                script_type: script::ScriptType::Bash,
-            },
-        ];
-        App::new(functions, "Test Project".to_string())
-    }
-
-    #[tokio::test]
-    async fn test_quit_with_q_key() {
-        let mut app = create_test_app();
-
-        // Simulate pressing 'q' to quit
-        let mut mock_reader = MockEventReader::new(vec![key_event(KeyCode::Char('q'))]);
-
-        // We can't easily test with a real terminal, but we can test the app state changes
-        assert!(!app.should_quit);
-
-        // Manually simulate the key handling logic
-        if let Event::Key(key) = mock_reader.read_event().unwrap() {
-            if key.code == KeyCode::Char('q') {
-                app.should_quit = true;
-            }
-        }
-
-        assert!(app.should_quit);
-    }
-
-    #[tokio::test]
-    async fn test_quit_with_capital_q_key() {
-        let mut app = create_test_app();
-
-        // Simulate pressing 'Q' to quit
-        let mut mock_reader = MockEventReader::new(vec![key_event(KeyCode::Char('Q'))]);
-
-        assert!(!app.should_quit);
-
-        if let Event::Key(key) = mock_reader.read_event().unwrap() {
-            if key.code == KeyCode::Char('Q') {
-                app.should_quit = true;
-            }
-        }
-
-        assert!(app.should_quit);
-    }
-
-    #[tokio::test]
-    async fn test_info_modal_toggle() {
-        let mut app = create_test_app();
-
-        assert!(!app.show_info);
-
-        // Toggle info modal on
-        app.toggle_info();
-        assert!(app.show_info);
-
-        // Toggle info modal off
-        app.toggle_info();
-        assert!(!app.show_info);
-    }
-
-    #[tokio::test]
-    async fn test_search_mode_enter_and_exit() {
-        let mut app = create_test_app();
-
-        assert!(!app.search_mode);
-
-        // Enter search mode
-        app.enter_search_mode();
-        assert!(app.search_mode);
-
-        // Exit search mode
-        app.exit_search_mode();
-        assert!(!app.search_mode);
-    }
-
-    #[tokio::test]
-    async fn test_search_input_handling() {
-        let mut app = create_test_app();
-        app.enter_search_mode();
-
-        // Add characters to search
-        app.search_push_char('t');
-        app.search_push_char('e');
-        app.search_push_char('s');
-        app.search_push_char('t');
-
-        // Remove a character
-        app.search_pop_char();
-
-        // The search query should be managed internally by the app
-        assert!(app.search_mode);
-    }
-
-    #[tokio::test]
-    async fn test_navigation_next_previous() {
-        let mut app = create_test_app();
-
-        // Test next and previous navigation
-        app.next();
-        app.previous();
-
-        // Just verify these methods don't panic
-        // The actual selection logic is tested in ui::app module
-    }
-
-    #[tokio::test]
-    async fn test_output_scroll() {
-        let mut app = create_test_app();
-        app.focus = ui::app::FocusPane::Output;
-
-        // Add some output lines
-        for i in 0..10 {
-            app.output.push(format!("Line {}", i));
-        }
-
-        // Test scroll down
-        app.scroll_output_down();
-
-        // Test scroll up
-        app.scroll_output_up();
-
-        // Reset scroll
-        app.reset_output_scroll();
-    }
-
-    #[tokio::test]
-    async fn test_focus_toggle() {
-        let mut app = create_test_app();
-
-        let initial_focus = app.focus;
-        app.toggle_focus();
-        let after_toggle = app.focus;
-
-        // Focus should have changed
-        assert_ne!(initial_focus, after_toggle);
-
-        // Toggle back
-        app.toggle_focus();
-        assert_eq!(initial_focus, app.focus);
-    }
-
-    #[test]
-    fn test_format_display_name() {
-        assert_eq!(format_display_name("test_name"), "Test Name");
-        assert_eq!(format_display_name("my_function"), "My Function");
-        assert_eq!(format_display_name("single"), "Single");
-        assert_eq!(format_display_name(""), "");
-    }
-
     #[test]
     fn test_mock_event_reader() {
         let events = vec![
@@ -557,32 +389,6 @@ mod tests {
 
         // Should error when no more events
         assert!(reader.read_event().is_err());
-    }
-
-    #[tokio::test]
-    async fn test_info_modal_closes_with_esc() {
-        let mut app = create_test_app();
-
-        // Open info modal
-        app.toggle_info();
-        assert!(app.show_info);
-
-        // Close with ESC (simulated)
-        app.toggle_info();
-        assert!(!app.show_info);
-    }
-
-    #[tokio::test]
-    async fn test_search_mode_esc_key() {
-        let mut app = create_test_app();
-
-        // Enter search mode
-        app.enter_search_mode();
-        assert!(app.search_mode);
-
-        // Press ESC to exit
-        app.exit_search_mode();
-        assert!(!app.search_mode);
     }
 
     #[test]
@@ -622,40 +428,6 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[tokio::test]
-    async fn test_run_application_empty_directory_exits() {
-        use tempfile::TempDir;
-
-        let temp_dir = TempDir::new().unwrap();
-
-        let args = Args {
-            path: Some(temp_dir.path().to_path_buf()),
-            debug: false,
-        };
-
-        // This should fail because no scripts are found
-        // The function calls std::process::exit(1) so we can't test it directly
-        // Instead, we test the logic that leads to it
-
-        let current_dir = args.path.unwrap().canonicalize().unwrap();
-        let mut script_files = Vec::new();
-
-        let root_files = script::discover_scripts_shallow(&current_dir).unwrap();
-        script_files.extend(root_files);
-
-        let possible_dirs = vec!["script", "scripts", "jarvis"];
-        for dir_name in possible_dirs {
-            let dir_path = current_dir.join(dir_name);
-            if dir_path.exists() && dir_path.is_dir() {
-                let files = script::discover_scripts(&dir_path).unwrap();
-                script_files.extend(files);
-            }
-        }
-
-        // Verify that we get no scripts from empty directory
-        assert!(script_files.is_empty());
-    }
-
     #[test]
     fn test_args_parsing_with_path() {
         // Test that Args can parse path argument
@@ -674,138 +446,6 @@ mod tests {
             debug: false,
         };
         assert_eq!(args.path, None);
-    }
-
-    #[tokio::test]
-    async fn test_run_application_with_valid_scripts() {
-        use std::fs;
-        use tempfile::TempDir;
-
-        let temp_dir = TempDir::new().unwrap();
-
-        // Create a test script
-        let script_path = temp_dir.path().join("test.sh");
-        let content = r#"#!/bin/bash
-test_function() {
-    echo "Test"
-}
-"#;
-        fs::write(&script_path, content).unwrap();
-
-        let args = Args {
-            path: Some(temp_dir.path().to_path_buf()),
-            debug: false,
-        };
-
-        // This test verifies the script discovery works
-        // We can't fully test run_application because it requires terminal setup
-        let current_dir = args.path.unwrap().canonicalize().unwrap();
-        let mut script_files = Vec::new();
-
-        let root_files = script::discover_scripts_shallow(&current_dir).unwrap();
-        script_files.extend(root_files);
-
-        assert!(!script_files.is_empty());
-        assert_eq!(script_files.len(), 1);
-    }
-
-    #[tokio::test]
-    async fn test_run_application_script_parse_errors() {
-        use std::fs;
-        use tempfile::TempDir;
-
-        let temp_dir = TempDir::new().unwrap();
-
-        // Create an invalid bash script (empty file)
-        let script_path = temp_dir.path().join("invalid.sh");
-        fs::write(&script_path, "").unwrap();
-
-        let args = Args {
-            path: Some(temp_dir.path().to_path_buf()),
-            debug: false,
-        };
-
-        // Verify script discovery finds the file
-        let current_dir = args.path.unwrap().canonicalize().unwrap();
-        let mut script_files = Vec::new();
-
-        let root_files = script::discover_scripts_shallow(&current_dir).unwrap();
-        script_files.extend(root_files);
-
-        assert!(!script_files.is_empty());
-
-        // Attempt to parse - should handle errors gracefully
-        let mut all_functions = Vec::new();
-        let mut parse_errors = Vec::new();
-
-        for script_file in &script_files {
-            match &script_file.script_type {
-                script::ScriptType::Bash => {
-                    match script::parse_script(&script_file.path, &script_file.category) {
-                        Ok(functions) => {
-                            let visible_functions: Vec<_> =
-                                functions.into_iter().filter(|f| !f.ignored).collect();
-                            all_functions.extend(visible_functions);
-                        }
-                        Err(e) => {
-                            parse_errors.push((script_file.path.display().to_string(), e));
-                        }
-                    }
-                }
-                script::ScriptType::PackageJson => {}
-                script::ScriptType::DevboxJson => {}
-                script::ScriptType::Task => {}
-            }
-        }
-
-        // Empty file should parse successfully but have no functions
-        assert!(all_functions.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_run_application_discovers_subdirectories() {
-        use std::fs;
-        use tempfile::TempDir;
-
-        let temp_dir = TempDir::new().unwrap();
-
-        // Create script in scripts/ subdirectory
-        let scripts_dir = temp_dir.path().join("scripts");
-        fs::create_dir(&scripts_dir).unwrap();
-
-        let script_path = scripts_dir.join("test.sh");
-        let content = r#"#!/bin/bash
-test_function() {
-    echo "Test"
-}
-"#;
-        fs::write(&script_path, content).unwrap();
-
-        let args = Args {
-            path: Some(temp_dir.path().to_path_buf()),
-            debug: false,
-        };
-
-        // Test subdirectory discovery
-        let current_dir = args.path.unwrap().canonicalize().unwrap();
-        let mut script_files = Vec::new();
-
-        // Root directory
-        let root_files = script::discover_scripts_shallow(&current_dir).unwrap();
-        script_files.extend(root_files);
-
-        // Check subdirectories
-        let possible_dirs = vec!["script", "scripts", "jarvis"];
-        for dir_name in possible_dirs {
-            let dir_path = current_dir.join(dir_name);
-            if dir_path.exists() && dir_path.is_dir() {
-                let files = script::discover_scripts(&dir_path).unwrap();
-                script_files.extend(files);
-            }
-        }
-
-        assert!(!script_files.is_empty());
-        assert_eq!(script_files.len(), 1);
     }
 }
 
