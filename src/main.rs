@@ -1,3 +1,45 @@
+//! # Jarvis CLI Entry Point
+//!
+//! This is the main entry point for the Jarvis TUI application.
+//!
+//! ## Overview
+//!
+//! Jarvis is a beautiful terminal user interface for discovering and executing
+//! scripts with zero configuration. It automatically finds scripts in your project
+//! and presents them in an organized, searchable interface.
+//!
+//! ## Usage
+//!
+//! ```bash
+//! # Use current directory
+//! jarvis
+//!
+//! # Use a specific directory
+//! jarvis --path /path/to/project
+//!
+//! # Debug mode - print discovered scripts and exit
+//! jarvis --debug
+//! ```
+//!
+//! ## Architecture
+//!
+//! The application follows a simple architecture:
+//!
+//! 1. **Discovery**: Scans for script files in the project directory
+//! 2. **Parsing**: Extracts functions/scripts from discovered files
+//! 3. **UI**: Presents scripts in an interactive TUI with search and categories
+//! 4. **Execution**: Runs selected scripts with full terminal access
+//!
+//! ## Key Bindings
+//!
+//! - `q` / `Q` - Quit the application
+//! - `j` / `Down` - Move selection down
+//! - `k` / `Up` - Move selection up
+//! - `Enter` - Execute selected script or expand/collapse category
+//! - `/` - Enter search mode
+//! - `Tab` - Toggle focus between panes
+//! - `i` - Show/hide info modal
+
 use jarvis::script;
 use jarvis::ui;
 use jarvis::ui::App;

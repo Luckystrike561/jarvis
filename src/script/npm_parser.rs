@@ -1,3 +1,38 @@
+//! # npm Package Parser
+//!
+//! This module parses `package.json` files to extract npm scripts for display
+//! in the Jarvis TUI.
+//!
+//! ## Overview
+//!
+//! npm scripts are defined in the `scripts` section of `package.json`:
+//!
+//! ```json
+//! {
+//!   "scripts": {
+//!     "build": "webpack --mode production",
+//!     "test": "jest",
+//!     "lint": "eslint src/"
+//!   }
+//! }
+//! ```
+//!
+//! The parser extracts these scripts and converts them to [`NpmScript`] structs
+//! for display in the TUI.
+//!
+//! ## Key Types
+//!
+//! - [`PackageJson`] - Deserializes the package.json structure
+//! - [`NpmScript`] - Represents a single npm script with display metadata
+//! - [`parse_package_json`] - Main parsing function
+//!
+//! ## Display Name Generation
+//!
+//! Script names are converted to human-readable display names:
+//! - `build` -> "Build"
+//! - `test:unit` -> "Test:unit"
+//! - `pre-commit` -> "Pre Commit"
+
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

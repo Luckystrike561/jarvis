@@ -1,3 +1,37 @@
+//! # Script Discovery
+//!
+//! This module handles automatic discovery of script files in the project directory.
+//!
+//! ## Supported Script Types
+//!
+//! - **Bash scripts** (`.sh` files) - Functions are extracted by the parser
+//! - **npm scripts** (`package.json`) - Scripts from the "scripts" section
+//! - **Devbox scripts** (`devbox.json`) - Scripts from the "shell.scripts" section
+//! - **Taskfiles** (`Taskfile.yml`, etc.) - Tasks defined in go-task format
+//!
+//! ## Discovery Locations
+//!
+//! Scripts are discovered from multiple locations:
+//!
+//! | Location | Depth | Description |
+//! |----------|-------|-------------|
+//! | `./` | 1 | Root directory (shallow scan) |
+//! | `./script/` | 2 | Script subdirectory |
+//! | `./scripts/` | 2 | Scripts subdirectory |
+//! | `./jarvis/` | 2 | Jarvis-specific directory |
+//!
+//! ## Category Assignment
+//!
+//! Each discovered script is assigned a category based on its source:
+//! - Root scripts use the filename (without extension) as category
+//! - Subdirectory scripts use the subdirectory name as category
+//!
+//! ## Key Functions
+//!
+//! - [`discover_scripts`] - Full recursive discovery with depth 2
+//! - [`discover_scripts_shallow`] - Shallow discovery with depth 1
+//! - [`format_display_name`] - Converts snake_case to Title Case
+
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};

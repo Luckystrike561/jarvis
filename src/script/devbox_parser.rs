@@ -1,3 +1,43 @@
+//! # Devbox Configuration Parser
+//!
+//! This module parses `devbox.json` files to extract Devbox scripts for display
+//! in the Jarvis TUI.
+//!
+//! ## Overview
+//!
+//! Devbox scripts are defined in the `shell.scripts` section of `devbox.json`.
+//! Scripts can be either strings or arrays of commands:
+//!
+//! ```json
+//! {
+//!   "shell": {
+//!     "scripts": {
+//!       "build": "cargo build --release",
+//!       "check": ["cargo clippy", "cargo fmt --check"]
+//!     }
+//!   }
+//! }
+//! ```
+//!
+//! ## Key Types
+//!
+//! - [`ScriptValue`] - Handles both string and array script formats
+//! - [`DevboxJson`] - Top-level devbox.json structure
+//! - [`DevboxShell`] - The shell configuration containing scripts
+//! - [`DevboxScript`] - Represents a single script with display metadata
+//! - [`parse_devbox_json`] - Main parsing function
+//!
+//! ## Script Value Formats
+//!
+//! The parser handles two common formats:
+//!
+//! | Format | Example | Stored As |
+//! |--------|---------|-----------|
+//! | String | `"cargo build"` | `ScriptValue::Single` |
+//! | Array | `["cargo clippy", "cargo fmt"]` | `ScriptValue::Multiple` |
+//!
+//! Array commands are joined with `&&` for description display.
+
 use anyhow::{Context, Result};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
