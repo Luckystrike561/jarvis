@@ -25,12 +25,12 @@ jarvis -p ~/projects           # Short form
 
 **Bash:** Shebang: `#!/usr/bin/env bash`. Naming: `snake_case` (functions/vars). All bash functions are automatically discovered - no arrays needed. Format with `shfmt`, lint with `shellcheck`.
 
-**Function Annotations:** Customize function display in the TUI using special comment annotations:
+**Function Annotations:** Customize function/task display in the TUI using special comment annotations. Supported in both bash scripts and Taskfile.yml:
 - `@emoji <emoji>` - Add an emoji prefix before the function name (e.g., `# @emoji 🚀`)
 - `@description <text>` - Provide a custom description for the details panel (e.g., `# @description Deploy to production`)
 - `@ignore` - Hide utility/helper functions from the TUI (e.g., `# @ignore`)
-- Place annotations in comments directly above the function definition (consecutive comment lines only)
-- Example:
+- Place annotations in comments directly above the function/task definition (consecutive comment lines only)
+- Bash example:
   ```bash
   # @emoji 🚀
   # @description Deploy the application to production
@@ -42,6 +42,20 @@ jarvis -p ~/projects           # Short form
   _helper_function() {
       echo "Internal utility - hidden from TUI"
   }
+  ```
+- Taskfile example:
+  ```yaml
+  tasks:
+    # @emoji 🚀
+    # @description Deploy the application to production
+    deploy:
+      cmds:
+        - ./deploy.sh
+
+    # @ignore
+    _internal_helper:
+      cmds:
+        - echo "helper"
   ```
 
 **Imports:** Group std > external crates > internal modules, separated by blank lines. Use explicit imports over wildcards.
