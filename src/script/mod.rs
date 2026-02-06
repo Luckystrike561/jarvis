@@ -35,6 +35,7 @@ pub mod executor;
 pub mod npm_parser;
 pub mod parser;
 pub mod task_parser;
+pub mod utils;
 
 pub use devbox_parser::parse_devbox_json;
 pub use discovery::{

@@ -54,6 +54,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::script::discovery::{format_display_name, ScriptType};
+use crate::script::utils::is_valid_bash_identifier;
 
 #[derive(Debug, Clone)]
 pub struct ScriptFunction {
@@ -162,22 +163,6 @@ pub fn parse_script(path: &Path, category: &str) -> Result<Vec<ScriptFunction>> 
     }
 
     Ok(functions)
-}
-
-/// Check if a string is a valid bash identifier
-fn is_valid_bash_identifier(name: &str) -> bool {
-    if name.is_empty() {
-        return false;
-    }
-
-    // First character must be letter or underscore
-    let first_char = name.chars().next().unwrap();
-    if !first_char.is_ascii_alphabetic() && first_char != '_' {
-        return false;
-    }
-
-    // Remaining characters must be alphanumeric or underscore
-    name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 #[cfg(test)]
@@ -295,25 +280,6 @@ echo "Just a script"
 
         let result = parse_script(&script_path, "Test");
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_is_valid_bash_identifier_valid() {
-        assert!(is_valid_bash_identifier("valid_name"));
-        assert!(is_valid_bash_identifier("_underscore"));
-        assert!(is_valid_bash_identifier("name123"));
-        assert!(is_valid_bash_identifier("CamelCase"));
-        assert!(is_valid_bash_identifier("snake_case_123"));
-    }
-
-    #[test]
-    fn test_is_valid_bash_identifier_invalid() {
-        assert!(!is_valid_bash_identifier(""));
-        assert!(!is_valid_bash_identifier("123start"));
-        assert!(!is_valid_bash_identifier("has-dash"));
-        assert!(!is_valid_bash_identifier("has space"));
-        assert!(!is_valid_bash_identifier("has.dot"));
-        assert!(!is_valid_bash_identifier("has$dollar"));
     }
 
     #[test]
