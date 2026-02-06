@@ -251,13 +251,14 @@ async fn run_application(args: Args) -> Result<()> {
                     Ok(task_tasks) => {
                         let functions: Vec<script::ScriptFunction> = task_tasks
                             .into_iter()
+                            .filter(|t| !t.ignored) // Filter out ignored tasks
                             .map(|task_task| script::ScriptFunction {
                                 name: task_task.name,
                                 display_name: task_task.display_name,
                                 category: task_task.category,
                                 description: task_task.description,
-                                emoji: None,
-                                ignored: false,
+                                emoji: task_task.emoji,
+                                ignored: task_task.ignored,
                                 script_type: script::ScriptType::Task,
                             })
                             .collect();
