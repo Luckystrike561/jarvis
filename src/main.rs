@@ -17,6 +17,9 @@
 //! # Use a specific directory
 //! jarvis --path /path/to/project
 //!
+//! # Use a specific file
+//! jarvis --file ./scripts/deploy.sh
+//!
 //! # Debug mode - print discovered scripts and exit
 //! jarvis --debug
 //! ```
@@ -80,8 +83,17 @@ impl EventReader for CrosstermEventReader {
 #[command(about = "Your trusted AI assistant for automating scripts", long_about = None)]
 struct Args {
     /// Path to the base directory to search for bash scripts
-    #[arg(short, long, value_name = "DIR")]
+    #[arg(short, long, value_name = "DIR", conflicts_with = "file")]
     path: Option<PathBuf>,
+
+    /// Path to a single script file to run Jarvis on
+    #[arg(
+        short = 'f',
+        long = "file",
+        value_name = "FILE",
+        conflicts_with = "path"
+    )]
+    file: Option<PathBuf>,
 
     /// Print debug information about discovered scripts and exit
     #[arg(long)]
@@ -114,58 +126,79 @@ async fn main() -> Result<()> {
 }
 
 async fn run_application(args: Args) -> Result<()> {
-    // Get the base directory - use provided path or current directory
-    let current_dir = if let Some(path) = args.path {
-        path.canonicalize()
-            .with_context(|| format!("Failed to access directory: {}", path.display()))?
+    // Determine script files based on mode: single file or directory discovery
+    let (script_files, current_dir) = if let Some(file_path) = args.file {
+        // Single file mode: discover only from the specified file
+        let canonical_path = file_path
+            .canonicalize()
+            .with_context(|| format!("Failed to access file: {}", file_path.display()))?;
+
+        let script_file = script::discover_single_file(&canonical_path)
+            .with_context(|| format!("Failed to parse file: {}", canonical_path.display()))?;
+
+        // Use the file's parent directory as the working directory
+        let dir = canonical_path
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+
+        (vec![script_file], dir)
     } else {
-        std::env::current_dir().context("Failed to get current working directory")?
-    };
+        // Directory mode: discover scripts from directory tree
+        let current_dir = if let Some(path) = args.path {
+            path.canonicalize()
+                .with_context(|| format!("Failed to access directory: {}", path.display()))?
+        } else {
+            std::env::current_dir().context("Failed to get current working directory")?
+        };
 
-    // Discover scripts from multiple locations:
-    // 1. Current directory (root .sh files only, depth 1 to avoid subdirs)
-    // 2. ./script/ folder (if exists)
-    // 3. ./scripts/ folder (if exists)
-    // 4. ./jarvis/ folder (if exists)
-    let mut script_files = Vec::new();
+        // Discover scripts from multiple locations:
+        // 1. Current directory (root .sh files only, depth 1 to avoid subdirs)
+        // 2. ./script/ folder (if exists)
+        // 3. ./scripts/ folder (if exists)
+        // 4. ./jarvis/ folder (if exists)
+        let mut script_files = Vec::new();
 
-    // Scan current directory for .sh files (shallow, only immediate directory)
-    let root_files = script::discover_scripts_shallow(&current_dir)
-        .with_context(|| format!("Failed to discover scripts in: {}", current_dir.display()))?;
-    script_files.extend(root_files);
+        // Scan current directory for .sh files (shallow, only immediate directory)
+        let root_files = script::discover_scripts_shallow(&current_dir)
+            .with_context(|| format!("Failed to discover scripts in: {}", current_dir.display()))?;
+        script_files.extend(root_files);
 
-    // Check optional subdirectories (with depth 2 for nested structures)
-    let possible_dirs = vec!["script", "scripts", "jarvis"];
-    for dir_name in possible_dirs {
-        let dir_path = current_dir.join(dir_name);
-        if dir_path.exists() && dir_path.is_dir() {
-            let files = script::discover_scripts(&dir_path).with_context(|| {
-                format!("Failed to discover scripts in: {}", dir_path.display())
-            })?;
-            script_files.extend(files);
+        // Check optional subdirectories (with depth 2 for nested structures)
+        let possible_dirs = vec!["script", "scripts", "jarvis"];
+        for dir_name in possible_dirs {
+            let dir_path = current_dir.join(dir_name);
+            if dir_path.exists() && dir_path.is_dir() {
+                let files = script::discover_scripts(&dir_path).with_context(|| {
+                    format!("Failed to discover scripts in: {}", dir_path.display())
+                })?;
+                script_files.extend(files);
+            }
         }
-    }
 
-    if script_files.is_empty() {
-        eprintln!("Warning: No scripts found");
-        eprintln!("Searched in: {}", current_dir.display());
-        eprintln!("Also checked: ./script/, ./scripts/, ./jarvis/ (if they exist)");
-        eprintln!(
-            "\nPlease add bash scripts (.sh), package.json, devbox.json, or Taskfile.yml to get started."
-        );
-        eprintln!("\nExample bash script format:");
-        eprintln!(r#"  #!/usr/bin/env bash"#);
-        eprintln!(r#"  my_function() {{"#);
-        eprintln!(r#"      echo "Hello from my function""#);
-        eprintln!(r#"  }}"#);
-        eprintln!("\nExample package.json format:");
-        eprintln!(r#"  {{"#);
-        eprintln!(r#"    "scripts": {{"#);
-        eprintln!(r#"      "start": "node index.js""#);
-        eprintln!(r#"    }}"#);
-        eprintln!(r#"  }}"#);
-        std::process::exit(1);
-    }
+        if script_files.is_empty() {
+            eprintln!("Warning: No scripts found");
+            eprintln!("Searched in: {}", current_dir.display());
+            eprintln!("Also checked: ./script/, ./scripts/, ./jarvis/ (if they exist)");
+            eprintln!(
+                "\nPlease add bash scripts (.sh), package.json, devbox.json, or Taskfile.yml to get started."
+            );
+            eprintln!("\nExample bash script format:");
+            eprintln!(r#"  #!/usr/bin/env bash"#);
+            eprintln!(r#"  my_function() {{"#);
+            eprintln!(r#"      echo "Hello from my function""#);
+            eprintln!(r#"  }}"#);
+            eprintln!("\nExample package.json format:");
+            eprintln!(r#"  {{"#);
+            eprintln!(r#"    "scripts": {{"#);
+            eprintln!(r#"      "start": "node index.js""#);
+            eprintln!(r#"    }}"#);
+            eprintln!(r#"  }}"#);
+            std::process::exit(1);
+        }
+
+        (script_files, current_dir)
+    };
 
     // Debug mode: print discovered scripts and exit
     if args.debug {
@@ -482,6 +515,7 @@ mod tests {
     async fn test_run_application_nonexistent_directory() {
         let args = Args {
             path: Some(PathBuf::from("/nonexistent/directory/that/does/not/exist")),
+            file: None,
             debug: false,
         };
 
@@ -502,6 +536,7 @@ mod tests {
 
         let args = Args {
             path: Some(file_path.clone()),
+            file: None,
             debug: false,
         };
 
@@ -514,6 +549,7 @@ mod tests {
         // Test that Args can parse path argument
         let args = Args {
             path: Some(PathBuf::from("/some/path")),
+            file: None,
             debug: false,
         };
         assert_eq!(args.path, Some(PathBuf::from("/some/path")));
@@ -524,9 +560,59 @@ mod tests {
         // Test that Args works without path
         let args = Args {
             path: None,
+            file: None,
             debug: false,
         };
         assert_eq!(args.path, None);
+    }
+
+    #[test]
+    fn test_args_parsing_with_file() {
+        // Test that Args can parse file argument
+        let args = Args {
+            path: None,
+            file: Some(PathBuf::from("/some/file.sh")),
+            debug: false,
+        };
+        assert_eq!(args.file, Some(PathBuf::from("/some/file.sh")));
+    }
+
+    #[tokio::test]
+    async fn test_run_application_with_file_nonexistent() {
+        let args = Args {
+            path: None,
+            file: Some(PathBuf::from("/nonexistent/file.sh")),
+            debug: false,
+        };
+
+        let result = run_application(args).await;
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("Failed to access file"));
+    }
+
+    #[tokio::test]
+    async fn test_run_application_with_file_unsupported_type() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let txt_path = temp_dir.path().join("readme.txt");
+        fs::write(&txt_path, "text content").unwrap();
+
+        let args = Args {
+            path: None,
+            file: Some(txt_path),
+            debug: false,
+        };
+
+        let result = run_application(args).await;
+        assert!(result.is_err());
+        let err_msg = format!("{:?}", result.unwrap_err());
+        // The error chain includes "Failed to parse file" and "Unsupported file type"
+        assert!(
+            err_msg.contains("Unsupported file type") || err_msg.contains("Failed to parse file")
+        );
     }
 }
 

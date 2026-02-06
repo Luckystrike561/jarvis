@@ -120,6 +120,130 @@ pub fn discover_scripts_shallow(scripts_dir: &Path) -> Result<Vec<ScriptFile>> {
     discover_scripts_with_depth(scripts_dir, 1)
 }
 
+/// Discover a single script file and return its ScriptFile representation.
+///
+/// This function determines the script type from the file extension/name:
+/// - `.sh` files → Bash
+/// - `package.json` → PackageJson
+/// - `devbox.json` → DevboxJson
+/// - `Taskfile.yml` (and variants) → Task
+///
+/// # Arguments
+///
+/// * `file_path` - Path to the script file
+///
+/// # Returns
+///
+/// * `Ok(ScriptFile)` - Successfully identified script file
+/// * `Err` - File doesn't exist, is not a file, or is an unsupported type
+///
+/// # Example
+///
+/// ```ignore
+/// let script = discover_single_file(Path::new("./deploy.sh"))?;
+/// println!("Found: {} ({})", script.display_name, script.script_type);
+/// ```
+pub fn discover_single_file(file_path: &Path) -> Result<ScriptFile> {
+    // Verify the file exists
+    if !file_path.exists() {
+        anyhow::bail!("File '{}' does not exist", file_path.display());
+    }
+
+    // Verify it's a file, not a directory
+    if !file_path.is_file() {
+        anyhow::bail!("Path '{}' is not a file", file_path.display());
+    }
+
+    // Get the filename
+    let filename = file_path
+        .file_name()
+        .and_then(|f| f.to_str())
+        .with_context(|| format!("Invalid filename: {}", file_path.display()))?;
+
+    // Determine script type based on filename/extension
+    let script_type = determine_script_type(filename, file_path)?;
+
+    // Get the file stem (name without extension) for category/display name
+    let name = match script_type {
+        ScriptType::PackageJson | ScriptType::DevboxJson | ScriptType::Task => {
+            // For JSON/YAML config files, use the parent directory name or the filename
+            if let Some(parent) = file_path.parent() {
+                parent
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or(filename)
+                    .to_string()
+            } else {
+                filename.to_string()
+            }
+        }
+        ScriptType::Bash => {
+            // For .sh files, use the file stem
+            file_path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .with_context(|| format!("Invalid filename: {}", file_path.display()))?
+                .to_string()
+        }
+    };
+
+    let category = name.clone();
+    let display_name = match script_type {
+        ScriptType::Task => format!("📋 {}", format_display_name(&name)),
+        _ => format_display_name(&name),
+    };
+
+    Ok(ScriptFile {
+        path: file_path.to_path_buf(),
+        name,
+        category,
+        display_name,
+        script_type,
+    })
+}
+
+/// Determine the script type from the filename
+fn determine_script_type(filename: &str, file_path: &Path) -> Result<ScriptType> {
+    // Check for specific filenames first
+    if filename == "package.json" {
+        return Ok(ScriptType::PackageJson);
+    }
+
+    if filename == "devbox.json" {
+        if !is_devbox_available() {
+            anyhow::bail!(
+                "devbox.json found but 'devbox' is not installed or not in PATH. \
+                Please install devbox to use this file."
+            );
+        }
+        return Ok(ScriptType::DevboxJson);
+    }
+
+    if TASKFILE_NAMES.contains(&filename) {
+        if !crate::script::task_parser::is_task_available() {
+            anyhow::bail!(
+                "Taskfile found but 'task' is not installed or not in PATH. \
+                Please install go-task to use this file."
+            );
+        }
+        return Ok(ScriptType::Task);
+    }
+
+    // Check file extension for .sh files
+    if let Some(ext) = file_path.extension() {
+        if ext == "sh" {
+            return Ok(ScriptType::Bash);
+        }
+    }
+
+    // Unsupported file type
+    anyhow::bail!(
+        "Unsupported file type: '{}'. \
+        Supported types: .sh (bash), package.json (npm), devbox.json (devbox), Taskfile.yml (task)",
+        filename
+    );
+}
+
 fn discover_scripts_with_depth(scripts_dir: &Path, max_depth: usize) -> Result<Vec<ScriptFile>> {
     let mut scripts = Vec::new();
 
@@ -606,5 +730,92 @@ tasks:
             assert_eq!(sf.script_type, ScriptType::Task);
             assert!(sf.path.ends_with("Taskfile.yml"));
         }
+    }
+
+    // Tests for discover_single_file
+
+    #[test]
+    fn test_discover_single_file_bash() {
+        let temp_dir = TempDir::new().unwrap();
+        let script_path = temp_dir.path().join("deploy.sh");
+        fs::write(&script_path, "#!/bin/bash\necho 'deploy'").unwrap();
+
+        let result = discover_single_file(&script_path).unwrap();
+        assert_eq!(result.name, "deploy");
+        assert_eq!(result.category, "deploy");
+        assert_eq!(result.display_name, "Deploy");
+        assert_eq!(result.script_type, ScriptType::Bash);
+    }
+
+    #[test]
+    fn test_discover_single_file_bash_with_underscores() {
+        let temp_dir = TempDir::new().unwrap();
+        let script_path = temp_dir.path().join("my_deploy_script.sh");
+        fs::write(&script_path, "#!/bin/bash\necho 'deploy'").unwrap();
+
+        let result = discover_single_file(&script_path).unwrap();
+        assert_eq!(result.name, "my_deploy_script");
+        assert_eq!(result.category, "my_deploy_script");
+        assert_eq!(result.display_name, "My Deploy Script");
+        assert_eq!(result.script_type, ScriptType::Bash);
+    }
+
+    #[test]
+    fn test_discover_single_file_package_json() {
+        let temp_dir = TempDir::new().unwrap();
+        let package_path = temp_dir.path().join("package.json");
+        let content = r#"{"name": "test", "scripts": {"test": "jest"}}"#;
+        fs::write(&package_path, content).unwrap();
+
+        let result = discover_single_file(&package_path).unwrap();
+        assert_eq!(result.script_type, ScriptType::PackageJson);
+        // Category should be the parent directory name
+        assert!(!result.category.is_empty());
+    }
+
+    #[test]
+    fn test_discover_single_file_nonexistent() {
+        let temp_dir = TempDir::new().unwrap();
+        let nonexistent = temp_dir.path().join("nonexistent.sh");
+
+        let result = discover_single_file(&nonexistent);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("does not exist"));
+    }
+
+    #[test]
+    fn test_discover_single_file_directory() {
+        let temp_dir = TempDir::new().unwrap();
+
+        let result = discover_single_file(temp_dir.path());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("is not a file"));
+    }
+
+    #[test]
+    fn test_discover_single_file_unsupported_type() {
+        let temp_dir = TempDir::new().unwrap();
+        let txt_path = temp_dir.path().join("readme.txt");
+        fs::write(&txt_path, "some text").unwrap();
+
+        let result = discover_single_file(&txt_path);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Unsupported file type"));
+    }
+
+    #[test]
+    fn test_discover_single_file_with_emoji() {
+        let temp_dir = TempDir::new().unwrap();
+        let script_path = temp_dir.path().join("🏠 homelab.sh");
+        fs::write(&script_path, "#!/bin/bash\necho 'homelab'").unwrap();
+
+        let result = discover_single_file(&script_path).unwrap();
+        assert_eq!(result.name, "🏠 homelab");
+        assert_eq!(result.category, "🏠 homelab");
+        assert_eq!(result.display_name, "🏠 Homelab");
+        assert_eq!(result.script_type, ScriptType::Bash);
     }
 }
