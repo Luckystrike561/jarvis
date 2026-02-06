@@ -12,11 +12,15 @@
 //! - Respects task visibility and internal tasks
 //! - Gets accurate task descriptions from the CLI
 //!
+//! Additionally, this parser reads YAML comments from the Taskfile to extract
+//! annotations for customizing task display in the TUI.
+//!
 //! ## Key Types
 //!
 //! - [`TaskListOutput`] - JSON output from `task --list-all --json`
 //! - [`TaskInfo`] - Single task metadata from the CLI
 //! - [`TaskTask`] - Represents a task with display metadata for the TUI
+//! - [`TaskAnnotations`] - Annotations extracted from YAML comments
 //! - [`is_task_available`] - Checks if `task` CLI is installed
 //! - [`list_tasks`] - Main function to list tasks from a Taskfile
 //!
@@ -31,6 +35,32 @@
 //! - Task name and description
 //! - Task summary (fallback for description)
 //! - Location information (file, line, column)
+//!
+//! ## Annotations
+//!
+//! Tasks can be annotated with special comments above their definitions:
+//!
+//! ```yaml
+//! tasks:
+//!   # @emoji 🚀
+//!   # @description Deploy the application to production
+//!   deploy:
+//!     cmds:
+//!       - ./deploy.sh
+//!
+//!   # @ignore
+//!   _internal_helper:
+//!     cmds:
+//!       - echo "helper"
+//! ```
+//!
+//! ### Available Annotations
+//!
+//! | Annotation | Description |
+//! |------------|-------------|
+//! | `@emoji <emoji>` | Display emoji prefix in the TUI |
+//! | `@description <text>` | Custom description for the details panel |
+//! | `@ignore` | Hide the task from the TUI |
 //!
 //! ## Availability Caching
 //!
@@ -136,8 +166,9 @@ pub fn parse_taskfile_annotations_from_content(
 
     // Regex to match task definitions in YAML
     // Matches: "  task_name:" at the beginning of a line (with optional leading whitespace)
+    // The task name can be followed by whitespace or content (for inline YAML)
     // Must be under 'tasks:' section, so we track that
-    let task_def_re = Regex::new(r"^(\s*)([a-zA-Z_][a-zA-Z0-9_-]*):\s*$")
+    let task_def_re = Regex::new(r"^(\s*)([a-zA-Z_][a-zA-Z0-9_-]*):\s*")
         .context("Failed to compile task definition regex")?;
     let tasks_section_re =
         Regex::new(r"^tasks:\s*$").context("Failed to compile tasks section regex")?;
@@ -642,5 +673,69 @@ tasks:
         // Empty line between comment and task means annotation should still be found
         // (we look through empty lines)
         assert!(annotations.contains_key("deploy"));
+    }
+
+    #[test]
+    fn test_parse_taskfile_annotations_hyphenated_task_names() {
+        let content = r#"version: '3'
+
+tasks:
+  # @emoji 🚀
+  deploy-production:
+    cmds:
+      - ./deploy.sh
+
+  # @emoji 🧪
+  run-integration-tests:
+    cmds:
+      - cargo test --features integration
+"#;
+
+        let annotations = parse_taskfile_annotations_from_content(content).unwrap();
+        assert!(annotations.contains_key("deploy-production"));
+        assert_eq!(
+            annotations["deploy-production"].emoji,
+            Some("🚀".to_string())
+        );
+        assert!(annotations.contains_key("run-integration-tests"));
+        assert_eq!(
+            annotations["run-integration-tests"].emoji,
+            Some("🧪".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_taskfile_annotations_inline_yaml() {
+        // Tasks can have inline YAML content after the colon
+        let content = r#"version: '3'
+
+tasks:
+  # @emoji 🔧
+  quick-build: { cmds: ["cargo build"] }
+"#;
+
+        let annotations = parse_taskfile_annotations_from_content(content).unwrap();
+        assert!(annotations.contains_key("quick-build"));
+        assert_eq!(annotations["quick-build"].emoji, Some("🔧".to_string()));
+    }
+
+    #[test]
+    fn test_parse_taskfile_annotations_does_not_match_nested_keys() {
+        // Nested YAML keys like 'desc:', 'cmds:' should not be treated as task names
+        let content = r#"version: '3'
+
+tasks:
+  # @emoji 🚀
+  build:
+    desc: Build the project
+    cmds:
+      - cargo build
+"#;
+
+        let annotations = parse_taskfile_annotations_from_content(content).unwrap();
+        // Only 'build' should be in annotations, not 'desc' or 'cmds'
+        assert!(annotations.contains_key("build"));
+        assert!(!annotations.contains_key("desc"));
+        assert!(!annotations.contains_key("cmds"));
     }
 }
