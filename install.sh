@@ -87,7 +87,8 @@ check_dependencies() {
 get_latest_version() {
     local version
 
-    info "Fetching latest version..."
+    # Note: info goes to stderr here so it doesn't pollute the captured output
+    info "Fetching latest version..." >&2
 
     version=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null | \
         grep '"tag_name"' | \
@@ -109,7 +110,8 @@ download_and_install() {
     local tmp_dir
 
     tmp_dir=$(mktemp -d)
-    trap 'rm -rf "$tmp_dir"' EXIT
+    # shellcheck disable=SC2064
+    trap "rm -rf '$tmp_dir'" EXIT
 
     info "Downloading Jarvis ${version} for ${PLATFORM}..."
 
