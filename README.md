@@ -27,6 +27,18 @@ A beautiful TUI for managing and executing scripts with zero configuration.
 
 ## Installation
 
+### Quick Install (Recommended)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Luckystrike561/jarvis/main/install.sh | bash
+```
+
+This will install Jarvis to `~/.local/bin`. You can customize the installation directory:
+
+```bash
+INSTALL_DIR=/usr/local/bin curl -fsSL https://raw.githubusercontent.com/Luckystrike561/jarvis/main/install.sh | bash
+```
+
 ### Homebrew (macOS & Linux)
 
 ```bash
