@@ -11,24 +11,35 @@ tasks:
     cmds:
       - echo "{{.GREETING}}"
 
+  # @emoji 🔨
   build:
     desc: Build the project
     cmds:
       - cargo build
 
+  # @emoji 🧪
   test:
     desc: Run tests
     deps: [build]
     cmds:
       - cargo test
 
+  # @emoji ✅
+  # @description Run clippy linter and format checker
   check:
     desc: Run clippy and format check
     cmds:
       - cargo clippy -- -D warnings
       - cargo fmt -- --check
 
+  # @emoji 🧹
   clean:
     desc: Clean build artifacts
     cmds:
       - cargo clean
+
+  # @ignore
+  _internal_helper:
+    desc: Internal helper task (hidden from TUI)
+    cmds:
+      - echo "This is an internal helper"

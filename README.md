@@ -143,7 +143,9 @@ tasks:
 
 ### Function Annotations
 
-Customize how functions appear in the TUI:
+Customize how functions appear in the TUI using special comment annotations:
+
+**Bash scripts:**
 
 ```bash
 # @emoji 🚀
@@ -157,6 +159,29 @@ _helper_function() {
     # Hidden from TUI
 }
 ```
+
+**Taskfile tasks:**
+
+```yaml
+version: '3'
+tasks:
+  # @emoji 🚀
+  # @description Deploy the application to production
+  deploy:
+    cmds:
+      - ./deploy.sh
+
+  # @ignore
+  _internal_helper:
+    cmds:
+      - echo "helper"
+```
+
+| Annotation | Description |
+|------------|-------------|
+| `@emoji <emoji>` | Display emoji prefix in the TUI |
+| `@description <text>` | Custom description for the details panel |
+| `@ignore` | Hide the function/task from the TUI |
 
 ## Development
 
