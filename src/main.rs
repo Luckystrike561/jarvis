@@ -181,7 +181,7 @@ async fn run_application(args: Args) -> Result<()> {
             eprintln!("Searched in: {}", current_dir.display());
             eprintln!("Also checked: ./script/, ./scripts/, ./jarvis/ (if they exist)");
             eprintln!(
-                "\nPlease add bash scripts (.sh), package.json, devbox.json, or Taskfile.yml to get started."
+                "\nPlease add bash scripts (.sh), package.json, devbox.json, Taskfile.yml, or Makefile to get started."
             );
             eprintln!("\nExample bash script format:");
             eprintln!(r#"  #!/usr/bin/env bash"#);
@@ -293,6 +293,29 @@ async fn run_application(args: Args) -> Result<()> {
                                 emoji: task_task.emoji,
                                 ignored: task_task.ignored,
                                 script_type: script::ScriptType::Task,
+                            })
+                            .collect();
+                        all_functions.extend(functions);
+                    }
+                    Err(e) => {
+                        parse_errors.push((script_file.path.display().to_string(), e));
+                    }
+                }
+            }
+            script::ScriptType::Makefile => {
+                match script::list_make_targets(&script_file.path, &script_file.category) {
+                    Ok(make_targets) => {
+                        let functions: Vec<script::ScriptFunction> = make_targets
+                            .into_iter()
+                            .filter(|t| !t.ignored) // Filter out ignored targets
+                            .map(|make_target| script::ScriptFunction {
+                                name: make_target.name,
+                                display_name: make_target.display_name,
+                                category: make_target.category,
+                                description: make_target.description,
+                                emoji: make_target.emoji,
+                                ignored: make_target.ignored,
+                                script_type: script::ScriptType::Makefile,
                             })
                             .collect();
                         all_functions.extend(functions);
@@ -712,6 +735,9 @@ async fn execute_selected_function(
             }
             script::ScriptType::Task => {
                 script::execute_task_interactive(&script_file.path, &func_name)?
+            }
+            script::ScriptType::Makefile => {
+                script::execute_make_target_interactive(&script_file.path, &func_name)?
             }
         };
 

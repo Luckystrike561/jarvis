@@ -45,6 +45,7 @@ pub enum ScriptType {
     PackageJson,
     DevboxJson,
     Task,
+    Makefile,
 }
 
 #[derive(Debug, Clone)]
@@ -68,6 +69,9 @@ const TASKFILE_NAMES: &[&str] = &[
     "taskfile.yml",
     "Taskfile.yml",
 ];
+
+/// Makefile names to detect
+const MAKEFILE_NAMES: &[&str] = &["Makefile", "makefile", "GNUmakefile"];
 
 /// Cache for devbox availability check (checked once per process)
 static DEVBOX_AVAILABLE: OnceLock<bool> = OnceLock::new();
@@ -165,8 +169,11 @@ pub fn discover_single_file(file_path: &Path) -> Result<ScriptFile> {
 
     // Get the file stem (name without extension) for category/display name
     let name = match script_type {
-        ScriptType::PackageJson | ScriptType::DevboxJson | ScriptType::Task => {
-            // For JSON/YAML config files, use the parent directory name or the filename
+        ScriptType::PackageJson
+        | ScriptType::DevboxJson
+        | ScriptType::Task
+        | ScriptType::Makefile => {
+            // For JSON/YAML config files and Makefile, use the parent directory name or the filename
             if let Some(parent) = file_path.parent() {
                 parent
                     .file_name()
@@ -190,6 +197,7 @@ pub fn discover_single_file(file_path: &Path) -> Result<ScriptFile> {
     let category = name.clone();
     let display_name = match script_type {
         ScriptType::Task => format!("📋 {}", format_display_name(&name)),
+        ScriptType::Makefile => format!("🔨 {}", format_display_name(&name)),
         _ => format_display_name(&name),
     };
 
@@ -229,6 +237,16 @@ fn determine_script_type(filename: &str, file_path: &Path) -> Result<ScriptType>
         return Ok(ScriptType::Task);
     }
 
+    if MAKEFILE_NAMES.contains(&filename) {
+        if !crate::script::makefile_parser::is_make_available() {
+            anyhow::bail!(
+                "Makefile found but 'make' is not installed or not in PATH. \
+                Please install make to use this file."
+            );
+        }
+        return Ok(ScriptType::Makefile);
+    }
+
     // Check file extension for .sh files
     if let Some(ext) = file_path.extension() {
         if ext == "sh" {
@@ -239,7 +257,7 @@ fn determine_script_type(filename: &str, file_path: &Path) -> Result<ScriptType>
     // Unsupported file type
     anyhow::bail!(
         "Unsupported file type: '{}'. \
-        Supported types: .sh (bash), package.json (npm), devbox.json (devbox), Taskfile.yml (task)",
+        Supported types: .sh (bash), package.json (npm), devbox.json (devbox), Taskfile.yml (task), Makefile (make)",
         filename
     );
 }
@@ -278,7 +296,7 @@ fn discover_scripts_with_depth(scripts_dir: &Path, max_depth: usize) -> Result<V
             continue;
         }
 
-        // Check filename for package.json or devbox.json
+        // Check filename for package.json, devbox.json, Taskfile, or Makefile
         if let Some(filename) = path.file_name().and_then(|f| f.to_str()) {
             if filename == "package.json" {
                 // Extract parent directory name for category
@@ -359,6 +377,34 @@ fn discover_scripts_with_depth(scripts_dir: &Path, max_depth: usize) -> Result<V
                     category,
                     display_name,
                     script_type: ScriptType::Task,
+                });
+                continue;
+            }
+
+            if MAKEFILE_NAMES.contains(&filename) {
+                if !crate::script::makefile_parser::is_make_available() {
+                    continue;
+                }
+
+                let name = if let Some(parent) = path.parent() {
+                    parent
+                        .file_name()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("make")
+                        .to_string()
+                } else {
+                    "make".to_string()
+                };
+
+                let category = name.clone();
+                let display_name = format!("🔨 {}", format_display_name(&name));
+
+                scripts.push(ScriptFile {
+                    path: path.to_path_buf(),
+                    name,
+                    category,
+                    display_name,
+                    script_type: ScriptType::Makefile,
                 });
                 continue;
             }

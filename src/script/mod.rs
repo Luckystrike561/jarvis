@@ -11,6 +11,7 @@
 //! | npm | `package.json` | [`npm_parser::parse_package_json`] |
 //! | Devbox | `devbox.json` | [`devbox_parser::parse_devbox_json`] |
 //! | Task | `Taskfile.yml` | [`task_parser::list_tasks`] |
+//! | Makefile | `Makefile` | [`makefile_parser::list_targets`] |
 //!
 //! ## Discovery
 //!
@@ -32,6 +33,7 @@
 pub mod devbox_parser;
 pub mod discovery;
 pub mod executor;
+pub mod makefile_parser;
 pub mod npm_parser;
 pub mod parser;
 pub mod task_parser;
@@ -44,8 +46,9 @@ pub use discovery::{
 };
 pub use executor::{
     execute_devbox_script_interactive, execute_function_interactive,
-    execute_npm_script_interactive, execute_task_interactive,
+    execute_make_target_interactive, execute_npm_script_interactive, execute_task_interactive,
 };
+pub use makefile_parser::list_targets as list_make_targets;
 pub use npm_parser::parse_package_json;
 pub use parser::{parse_script, ScriptFunction};
 pub use task_parser::list_tasks;

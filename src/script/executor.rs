@@ -238,6 +238,47 @@ pub fn execute_devbox_script_interactive(devbox_dir: &Path, script_name: &str) -
     Ok(status.code().unwrap_or(1))
 }
 
+/// Execute a Makefile target interactively with full terminal access
+pub fn execute_make_target_interactive(makefile_path: &Path, target_name: &str) -> Result<i32> {
+    if !makefile_path.exists() {
+        anyhow::bail!("Makefile not found: {}", makefile_path.display());
+    }
+
+    if !makefile_path.is_file() {
+        anyhow::bail!("Path is not a file: {}", makefile_path.display());
+    }
+
+    if target_name.is_empty() {
+        anyhow::bail!("Target name cannot be empty");
+    }
+
+    let dir = makefile_path.parent().with_context(|| {
+        format!(
+            "Failed to get parent directory of: {}",
+            makefile_path.display()
+        )
+    })?;
+
+    let status = Command::new("make")
+        .arg("--file")
+        .arg(makefile_path)
+        .arg(target_name)
+        .current_dir(dir)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .with_context(|| {
+            format!(
+                "Failed to execute make target '{}' from {}",
+                target_name,
+                makefile_path.display()
+            )
+        })?;
+
+    Ok(status.code().unwrap_or(1))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
