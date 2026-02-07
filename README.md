@@ -20,9 +20,9 @@ A beautiful TUI for managing and executing scripts with zero configuration.
 
 ## Features
 
-- **Zero Configuration** - Auto-discovers bash functions, npm scripts, devbox scripts, and Taskfile tasks
+- **Zero Configuration** - Auto-discovers bash functions, npm scripts, devbox scripts, Taskfile tasks, and Makefile targets
 - **Beautiful TUI** - Modern terminal interface built with Ratatui
-- **Multi-Language Support** - Works with `.sh` files, `package.json`, `devbox.json`, and `Taskfile.yml`
+- **Multi-Language Support** - Works with `.sh` files, `package.json`, `devbox.json`, `Taskfile.yml`, and `Makefile`
 - **Single Binary** - Compile once, run anywhere
 
 ## Installation
@@ -139,7 +139,23 @@ tasks:
       - cargo test
 ```
 
+**Make** - From `Makefile`:
+
+```makefile
+# @emoji 🔨
+# @description Build the project in debug mode
+build:
+	cargo build
+
+# @emoji 🧪
+# @description Run the test suite
+test: build
+	cargo test
+```
+
 > **Note:** Task support requires the `task` binary to be installed. See [taskfile.dev](https://taskfile.dev) for installation instructions.
+
+> **Note:** Make support requires the `make` binary to be installed. It is pre-installed on most Unix systems.
 
 ### Function Annotations
 
@@ -175,6 +191,19 @@ tasks:
   _internal_helper:
     cmds:
       - echo "helper"
+```
+
+**Makefile targets:**
+
+```makefile
+# @emoji 🚀
+# @description Deploy the application to production
+deploy:
+	./deploy.sh
+
+# @ignore
+_internal_helper:
+	@echo "helper"
 ```
 
 | Annotation | Description |

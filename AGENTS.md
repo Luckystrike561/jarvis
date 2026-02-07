@@ -25,7 +25,7 @@ jarvis -p ~/projects           # Short form
 
 **Bash:** Shebang: `#!/usr/bin/env bash`. Naming: `snake_case` (functions/vars). All bash functions are automatically discovered - no arrays needed. Format with `shfmt`, lint with `shellcheck`.
 
-**Function Annotations:** Customize function/task display in the TUI using special comment annotations. Supported in both bash scripts and Taskfile.yml:
+**Function Annotations:** Customize function/task display in the TUI using special comment annotations. Supported in bash scripts, Taskfile.yml, and Makefile:
 - `@emoji <emoji>` - Add an emoji prefix before the function name (e.g., `# @emoji 🚀`)
 - `@description <text>` - Provide a custom description for the details panel (e.g., `# @description Deploy to production`)
 - `@ignore` - Hide utility/helper functions from the TUI (e.g., `# @ignore`)
@@ -57,6 +57,17 @@ jarvis -p ~/projects           # Short form
       cmds:
         - echo "helper"
   ```
+- Makefile example:
+  ```makefile
+  # @emoji 🚀
+  # @description Deploy the application to production
+  deploy:
+  	./deploy.sh
+
+  # @ignore
+  _internal_helper:
+  	@echo "helper"
+  ```
 
 **Imports:** Group std > external crates > internal modules, separated by blank lines. Use explicit imports over wildcards.
 
@@ -65,7 +76,7 @@ jarvis -p ~/projects           # Short form
 **Commits:** Use Conventional Commits format: `feat:`, `fix:`, `docs:`, `refactor:`, `perf:`, `test:`. Examples: `feat: add fuzzy search`, `fix: handle multi-line arrays`.
 
 ## Key Patterns
-- Script discovery: Jarvis scans current directory (`./`) and optional subdirectories (`./script/`, `./scripts/`, `./jarvis/`) for `.sh` files, auto-detects all bash functions. For this repo, use `jarvis -p example` to test.
+- Script discovery: Jarvis scans current directory (`./`) and optional subdirectories (`./script/`, `./scripts/`, `./jarvis/`) for `.sh` files, `package.json`, `devbox.json`, `Taskfile.yml`, and `Makefile`, auto-detects all bash functions, npm scripts, devbox scripts, task targets, and make targets. For this repo, use `jarvis -p example` to test.
 - Function naming: `my_function` becomes "My Function" in the UI
 - Execution: always use `.stdin(Stdio::inherit()).stdout(Stdio::inherit()).stderr(Stdio::inherit())` 
 - TUI states: `MainMenu` → `CategoryView` → execute → return

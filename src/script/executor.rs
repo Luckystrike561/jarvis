@@ -12,6 +12,7 @@
 //! | npm | `execute_npm_script_interactive` | `npm run script_name` |
 //! | Devbox | `execute_devbox_script_interactive` | `devbox run script_name` |
 //! | Task | `execute_task_interactive` | `task --taskfile path task_name` |
+//! | Make | `execute_make_target_interactive` | `make --file path target_name` |
 //!
 //! ## Key Design Decisions
 //!
@@ -589,5 +590,35 @@ custom_exit() {
         let result = execute_task_interactive(&taskfile, "");
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("cannot be empty"));
+    }
+
+    #[test]
+    fn test_execute_make_target_interactive_nonexistent_path() {
+        let temp_dir = TempDir::new().unwrap();
+        let makefile = temp_dir.path().join("Makefile");
+
+        let result = execute_make_target_interactive(&makefile, "build");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[test]
+    fn test_execute_make_target_interactive_empty_name() {
+        let temp_dir = TempDir::new().unwrap();
+        let makefile = temp_dir.path().join("Makefile");
+        fs::write(&makefile, ".PHONY: build\nbuild:\n\techo building").unwrap();
+
+        let result = execute_make_target_interactive(&makefile, "");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("cannot be empty"));
+    }
+
+    #[test]
+    fn test_execute_make_target_interactive_directory_instead_of_file() {
+        let temp_dir = TempDir::new().unwrap();
+
+        let result = execute_make_target_interactive(temp_dir.path(), "build");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not a file"));
     }
 }
