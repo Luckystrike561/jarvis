@@ -8,6 +8,7 @@
 //! - **npm scripts** (`package.json`) - Scripts from the "scripts" section
 //! - **Devbox scripts** (`devbox.json`) - Scripts from the "shell.scripts" section
 //! - **Taskfiles** (`Taskfile.yml`, etc.) - Tasks defined in go-task format
+//! - **Makefiles** (`Makefile`, etc.) - Targets defined in GNU Make format
 //!
 //! ## Discovery Locations
 //!
@@ -131,6 +132,7 @@ pub fn discover_scripts_shallow(scripts_dir: &Path) -> Result<Vec<ScriptFile>> {
 /// - `package.json` → PackageJson
 /// - `devbox.json` → DevboxJson
 /// - `Taskfile.yml` (and variants) → Task
+/// - `Makefile` (and variants) → Makefile
 ///
 /// # Arguments
 ///
@@ -775,6 +777,31 @@ tasks:
         if let Some(sf) = task_files.first() {
             assert_eq!(sf.script_type, ScriptType::Task);
             assert!(sf.path.ends_with("Taskfile.yml"));
+        }
+    }
+
+    #[test]
+    fn test_discover_makefile() {
+        let temp_dir = TempDir::new().unwrap();
+        let makefile_path = temp_dir.path().join("Makefile");
+
+        let content = ".PHONY: build test\n\nbuild:\n\techo building\n\ntest:\n\techo testing\n";
+        fs::write(&makefile_path, content).unwrap();
+
+        let result = discover_scripts(temp_dir.path()).unwrap();
+        // If make binary is installed we get 1 ScriptFile with Makefile type, else 0
+        let make_files: Vec<_> = result
+            .iter()
+            .filter(|s| s.script_type == ScriptType::Makefile)
+            .collect();
+        assert!(
+            make_files.len() <= 1,
+            "should have at most one Makefile script file"
+        );
+        if let Some(sf) = make_files.first() {
+            assert_eq!(sf.script_type, ScriptType::Makefile);
+            assert!(sf.path.ends_with("Makefile"));
+            assert!(sf.display_name.contains("🔨"));
         }
     }
 
