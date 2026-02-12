@@ -181,7 +181,7 @@ async fn run_application(args: Args) -> Result<()> {
             eprintln!("Searched in: {}", current_dir.display());
             eprintln!("Also checked: ./script/, ./scripts/, ./jarvis/ (if they exist)");
             eprintln!(
-                "\nPlease add bash scripts (.sh), package.json, devbox.json, Taskfile.yml, or Makefile to get started."
+                "\nPlease add bash scripts (.sh), package.json, devbox.json, Taskfile.yml, Makefile, or justfile to get started."
             );
             eprintln!("\nExample bash script format:");
             eprintln!(r#"  #!/usr/bin/env bash"#);
@@ -316,6 +316,29 @@ async fn run_application(args: Args) -> Result<()> {
                                 emoji: make_target.emoji,
                                 ignored: make_target.ignored,
                                 script_type: script::ScriptType::Makefile,
+                            })
+                            .collect();
+                        all_functions.extend(functions);
+                    }
+                    Err(e) => {
+                        parse_errors.push((script_file.path.display().to_string(), e));
+                    }
+                }
+            }
+            script::ScriptType::Just => {
+                match script::list_just_recipes(&script_file.path, &script_file.category) {
+                    Ok(just_recipes) => {
+                        let functions: Vec<script::ScriptFunction> = just_recipes
+                            .into_iter()
+                            .filter(|r| !r.ignored) // Filter out ignored recipes
+                            .map(|just_recipe| script::ScriptFunction {
+                                name: just_recipe.name,
+                                display_name: just_recipe.display_name,
+                                category: just_recipe.category,
+                                description: just_recipe.description,
+                                emoji: just_recipe.emoji,
+                                ignored: just_recipe.ignored,
+                                script_type: script::ScriptType::Just,
                             })
                             .collect();
                         all_functions.extend(functions);
@@ -738,6 +761,9 @@ async fn execute_selected_function(
             }
             script::ScriptType::Makefile => {
                 script::execute_make_target_interactive(&script_file.path, &func_name)?
+            }
+            script::ScriptType::Just => {
+                script::execute_just_recipe_interactive(&script_file.path, &func_name)?
             }
         };
 

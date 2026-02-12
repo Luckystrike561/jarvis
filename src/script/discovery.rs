@@ -9,6 +9,7 @@
 //! - **Devbox scripts** (`devbox.json`) - Scripts from the "shell.scripts" section
 //! - **Taskfiles** (`Taskfile.yml`, etc.) - Tasks defined in go-task format
 //! - **Makefiles** (`Makefile`, etc.) - Targets defined in GNU Make format
+//! - **Justfiles** (`justfile`, etc.) - Recipes defined in just format
 //!
 //! ## Discovery Locations
 //!
@@ -47,6 +48,7 @@ pub enum ScriptType {
     DevboxJson,
     Task,
     Makefile,
+    Just,
 }
 
 #[derive(Debug, Clone)]
@@ -73,6 +75,9 @@ const TASKFILE_NAMES: &[&str] = &[
 
 /// Makefile names to detect
 const MAKEFILE_NAMES: &[&str] = &["Makefile", "makefile", "GNUmakefile"];
+
+/// Justfile names to detect
+const JUSTFILE_NAMES: &[&str] = &["justfile", "Justfile", ".justfile"];
 
 /// Cache for devbox availability check (checked once per process)
 static DEVBOX_AVAILABLE: OnceLock<bool> = OnceLock::new();
@@ -174,7 +179,8 @@ pub fn discover_single_file(file_path: &Path) -> Result<ScriptFile> {
         ScriptType::PackageJson
         | ScriptType::DevboxJson
         | ScriptType::Task
-        | ScriptType::Makefile => {
+        | ScriptType::Makefile
+        | ScriptType::Just => {
             // For JSON/YAML config files and Makefile, use the parent directory name or the filename
             if let Some(parent) = file_path.parent() {
                 parent
@@ -200,6 +206,7 @@ pub fn discover_single_file(file_path: &Path) -> Result<ScriptFile> {
     let display_name = match script_type {
         ScriptType::Task => format!("📋 {}", format_display_name(&name)),
         ScriptType::Makefile => format!("🔨 {}", format_display_name(&name)),
+        ScriptType::Just => format!("⚡ {}", format_display_name(&name)),
         _ => format_display_name(&name),
     };
 
@@ -249,6 +256,16 @@ fn determine_script_type(filename: &str, file_path: &Path) -> Result<ScriptType>
         return Ok(ScriptType::Makefile);
     }
 
+    if JUSTFILE_NAMES.contains(&filename) {
+        if !crate::script::just_parser::is_just_available() {
+            anyhow::bail!(
+                "Justfile found but 'just' is not installed or not in PATH. \
+                Please install just to use this file."
+            );
+        }
+        return Ok(ScriptType::Just);
+    }
+
     // Check file extension for .sh files
     if let Some(ext) = file_path.extension() {
         if ext == "sh" {
@@ -259,7 +276,7 @@ fn determine_script_type(filename: &str, file_path: &Path) -> Result<ScriptType>
     // Unsupported file type
     anyhow::bail!(
         "Unsupported file type: '{}'. \
-        Supported types: .sh (bash), package.json (npm), devbox.json (devbox), Taskfile.yml (task), Makefile (make)",
+        Supported types: .sh (bash), package.json (npm), devbox.json (devbox), Taskfile.yml (task), Makefile (make), justfile (just)",
         filename
     );
 }
@@ -407,6 +424,34 @@ fn discover_scripts_with_depth(scripts_dir: &Path, max_depth: usize) -> Result<V
                     category,
                     display_name,
                     script_type: ScriptType::Makefile,
+                });
+                continue;
+            }
+
+            if JUSTFILE_NAMES.contains(&filename) {
+                if !crate::script::just_parser::is_just_available() {
+                    continue;
+                }
+
+                let name = if let Some(parent) = path.parent() {
+                    parent
+                        .file_name()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("just")
+                        .to_string()
+                } else {
+                    "just".to_string()
+                };
+
+                let category = name.clone();
+                let display_name = format!("⚡ {}", format_display_name(&name));
+
+                scripts.push(ScriptFile {
+                    path: path.to_path_buf(),
+                    name,
+                    category,
+                    display_name,
+                    script_type: ScriptType::Just,
                 });
                 continue;
             }

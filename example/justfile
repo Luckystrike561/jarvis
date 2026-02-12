@@ -1,0 +1,43 @@
+# Example justfile for testing Jarvis Just integration
+# See: https://github.com/casey/just
+
+# @emoji 🔨
+# @description Build the project in debug mode
+build:
+    cargo build
+
+# @emoji 🧪
+# @description Run the test suite
+test: build
+    cargo test
+
+# @emoji ✅
+# @description Run clippy linter and format checker
+check:
+    cargo clippy -- -D warnings
+    cargo fmt -- --check
+
+# @emoji 🧹
+# @description Clean build artifacts
+clean:
+    cargo clean
+
+# @emoji 📦
+# @description Build optimized release binary
+release:
+    cargo build --release
+
+# @emoji 🚀
+# @description Deploy to the specified environment
+deploy env="staging":
+    echo "Deploying to {{env}}..."
+
+# @emoji ❓
+# @description Show available just recipes
+help:
+    @echo "Available recipes:"
+    @just --list
+
+# @ignore
+_internal_helper:
+    @echo "This is an internal helper recipe (hidden from TUI)"
