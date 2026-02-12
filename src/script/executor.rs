@@ -15,6 +15,7 @@
 //! | Make | `execute_make_target_interactive` | `make --file path target_name` |
 //! | Just | `execute_just_recipe_interactive` | `just --justfile path recipe_name` |
 //! | Cargo | `execute_cargo_target_interactive` | `cargo run --bin/--example name` |
+//! | Nx | `execute_nx_target_interactive` | `npx nx run project:target` |
 //!
 //! ## Key Design Decisions
 //!
@@ -378,6 +379,76 @@ pub fn execute_cargo_target_interactive(manifest_path: &Path, target_name: &str)
                 manifest_path.display()
             )
         })?;
+
+    Ok(status.code().unwrap_or(1))
+}
+
+/// Execute an Nx target interactively with full terminal access.
+///
+/// The `target_name` parameter is expected in the format `"project:target"`,
+/// which is passed directly to `nx run`.
+///
+/// Uses `npx nx` if available locally, otherwise falls back to global `nx`.
+pub fn execute_nx_target_interactive(nx_json_path: &Path, target_name: &str) -> Result<i32> {
+    if !nx_json_path.exists() {
+        anyhow::bail!("nx.json not found: {}", nx_json_path.display());
+    }
+
+    if !nx_json_path.is_file() {
+        anyhow::bail!("Path is not a file: {}", nx_json_path.display());
+    }
+
+    if target_name.is_empty() {
+        anyhow::bail!("Target name cannot be empty");
+    }
+
+    let dir = nx_json_path.parent().with_context(|| {
+        format!(
+            "Failed to get parent directory of: {}",
+            nx_json_path.display()
+        )
+    })?;
+
+    // Determine whether to use npx nx or nx
+    let npx_available = Command::new("npx")
+        .args(["nx", "--version"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+
+    let status = if npx_available {
+        Command::new("npx")
+            .args(["nx", "run", target_name])
+            .current_dir(dir)
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .status()
+            .with_context(|| {
+                format!(
+                    "Failed to execute nx target '{}' from {}",
+                    target_name,
+                    nx_json_path.display()
+                )
+            })?
+    } else {
+        Command::new("nx")
+            .args(["run", target_name])
+            .current_dir(dir)
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .status()
+            .with_context(|| {
+                format!(
+                    "Failed to execute nx target '{}' from {}",
+                    target_name,
+                    nx_json_path.display()
+                )
+            })?
+    };
 
     Ok(status.code().unwrap_or(1))
 }
@@ -806,6 +877,36 @@ custom_exit() {
         let temp_dir = TempDir::new().unwrap();
 
         let result = execute_cargo_target_interactive(temp_dir.path(), "bin:myapp");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not a file"));
+    }
+
+    #[test]
+    fn test_execute_nx_target_interactive_nonexistent_path() {
+        let temp_dir = TempDir::new().unwrap();
+        let nx_json = temp_dir.path().join("nx.json");
+
+        let result = execute_nx_target_interactive(&nx_json, "my-app:build");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[test]
+    fn test_execute_nx_target_interactive_empty_name() {
+        let temp_dir = TempDir::new().unwrap();
+        let nx_json = temp_dir.path().join("nx.json");
+        fs::write(&nx_json, "{}").unwrap();
+
+        let result = execute_nx_target_interactive(&nx_json, "");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("cannot be empty"));
+    }
+
+    #[test]
+    fn test_execute_nx_target_interactive_directory_instead_of_file() {
+        let temp_dir = TempDir::new().unwrap();
+
+        let result = execute_nx_target_interactive(temp_dir.path(), "my-app:build");
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not a file"));
     }
