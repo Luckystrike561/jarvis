@@ -13,6 +13,7 @@
 //! | Task | `Taskfile.yml` | [`task_parser::list_tasks`] |
 //! | Makefile | `Makefile` | [`makefile_parser::list_targets`] |
 //! | Just | `justfile` | [`just_parser::list_recipes`] |
+//! | Cargo | `Cargo.toml` | [`cargo_parser::list_targets`] |
 //!
 //! ## Discovery
 //!
@@ -31,6 +32,7 @@
 //!
 //! See [`executor`] module for details.
 
+pub mod cargo_parser;
 pub mod devbox_parser;
 pub mod discovery;
 pub mod executor;
@@ -41,14 +43,15 @@ pub mod parser;
 pub mod task_parser;
 pub mod utils;
 
+pub use cargo_parser::list_targets as list_cargo_targets;
 pub use devbox_parser::parse_devbox_json;
 pub use discovery::{
     discover_scripts, discover_scripts_shallow, discover_single_file, format_display_name,
     ScriptFile, ScriptType,
 };
 pub use executor::{
-    execute_devbox_script_interactive, execute_function_interactive,
-    execute_just_recipe_interactive, execute_make_target_interactive,
+    execute_cargo_target_interactive, execute_devbox_script_interactive,
+    execute_function_interactive, execute_just_recipe_interactive, execute_make_target_interactive,
     execute_npm_script_interactive, execute_task_interactive,
 };
 pub use just_parser::list_recipes as list_just_recipes;

@@ -14,6 +14,7 @@
 //! | Task | `execute_task_interactive` | `task --taskfile path task_name` |
 //! | Make | `execute_make_target_interactive` | `make --file path target_name` |
 //! | Just | `execute_just_recipe_interactive` | `just --justfile path recipe_name` |
+//! | Cargo | `execute_cargo_target_interactive` | `cargo run --bin/--example name` |
 //!
 //! ## Key Design Decisions
 //!
@@ -316,6 +317,65 @@ pub fn execute_just_recipe_interactive(justfile_path: &Path, recipe_name: &str) 
                 "Failed to execute just recipe '{}' from {}",
                 recipe_name,
                 justfile_path.display()
+            )
+        })?;
+
+    Ok(status.code().unwrap_or(1))
+}
+
+/// Execute a cargo target interactively with full terminal access.
+///
+/// The `target_name` parameter is expected to be prefixed with the target type:
+/// - `"bin:<name>"` for binary targets (`cargo run --bin <name>`)
+/// - `"example:<name>"` for example targets (`cargo run --example <name>`)
+///
+/// If no prefix is found, defaults to `--bin`.
+pub fn execute_cargo_target_interactive(manifest_path: &Path, target_name: &str) -> Result<i32> {
+    if !manifest_path.exists() {
+        anyhow::bail!("Cargo.toml not found: {}", manifest_path.display());
+    }
+
+    if !manifest_path.is_file() {
+        anyhow::bail!("Path is not a file: {}", manifest_path.display());
+    }
+
+    if target_name.is_empty() {
+        anyhow::bail!("Target name cannot be empty");
+    }
+
+    // Parse the target type prefix
+    let (flag, name) = if let Some(stripped) = target_name.strip_prefix("bin:") {
+        ("--bin", stripped)
+    } else if let Some(stripped) = target_name.strip_prefix("example:") {
+        ("--example", stripped)
+    } else {
+        // Default to --bin if no prefix
+        ("--bin", target_name)
+    };
+
+    let dir = manifest_path.parent().with_context(|| {
+        format!(
+            "Failed to get parent directory of: {}",
+            manifest_path.display()
+        )
+    })?;
+
+    let status = Command::new("cargo")
+        .arg("run")
+        .arg(flag)
+        .arg(name)
+        .arg("--manifest-path")
+        .arg(manifest_path)
+        .current_dir(dir)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .with_context(|| {
+            format!(
+                "Failed to execute cargo target '{}' from {}",
+                name,
+                manifest_path.display()
             )
         })?;
 
@@ -716,6 +776,36 @@ custom_exit() {
         let temp_dir = TempDir::new().unwrap();
 
         let result = execute_just_recipe_interactive(temp_dir.path(), "build");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not a file"));
+    }
+
+    #[test]
+    fn test_execute_cargo_target_interactive_nonexistent_path() {
+        let temp_dir = TempDir::new().unwrap();
+        let cargo_toml = temp_dir.path().join("Cargo.toml");
+
+        let result = execute_cargo_target_interactive(&cargo_toml, "bin:myapp");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[test]
+    fn test_execute_cargo_target_interactive_empty_name() {
+        let temp_dir = TempDir::new().unwrap();
+        let cargo_toml = temp_dir.path().join("Cargo.toml");
+        fs::write(&cargo_toml, "[package]\nname = \"test\"").unwrap();
+
+        let result = execute_cargo_target_interactive(&cargo_toml, "");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("cannot be empty"));
+    }
+
+    #[test]
+    fn test_execute_cargo_target_interactive_directory_instead_of_file() {
+        let temp_dir = TempDir::new().unwrap();
+
+        let result = execute_cargo_target_interactive(temp_dir.path(), "bin:myapp");
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not a file"));
     }
