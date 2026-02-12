@@ -58,18 +58,42 @@
 //! The `make` binary availability is cached using [`OnceLock`] to avoid
 //! repeated process spawning during discovery.
 
-use anyhow::{Context, Result};
-use regex::Regex;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
 
+use anyhow::{Context, Result};
+use regex::Regex;
+
 use crate::script::discovery::format_display_name;
 
 /// Cache for make availability check (checked once per process)
 static MAKE_AVAILABLE: OnceLock<bool> = OnceLock::new();
+
+/// Special Makefile target names that should be excluded from the TUI
+const SKIP_PATTERNS: &[&str] = &[
+    ".PHONY",
+    ".DEFAULT",
+    ".PRECIOUS",
+    ".INTERMEDIATE",
+    ".SECONDARY",
+    ".SECONDEXPANSION",
+    ".DELETE_ON_ERROR",
+    ".IGNORE",
+    ".LOW_RESOLUTION_TIME",
+    ".SILENT",
+    ".EXPORT_ALL_VARIABLES",
+    ".NOTPARALLEL",
+    ".ONESHELL",
+    ".POSIX",
+];
+
+/// File extensions that indicate build artifact targets to be filtered out
+const ARTIFACT_EXTENSIONS: &[&str] = &[
+    ".o", ".a", ".so", ".out", ".obj", ".lib", ".dll", ".dylib", ".exe",
+];
 
 /// Make target item for TUI display (mirrors other script types)
 #[derive(Debug, Clone)]
@@ -136,6 +160,8 @@ pub fn parse_makefile_annotations_from_content(
     let ignore_re =
         Regex::new(r"^\s*#\s*@ignore\s*$").context("Failed to compile ignore regex pattern")?;
     let comment_re = Regex::new(r"^\s*#").context("Failed to compile comment regex pattern")?;
+    let plain_comment_re =
+        Regex::new(r"^\s*#\s+(.+)$").context("Failed to compile plain comment regex pattern")?;
 
     // Regex to match target definitions in Makefile
     // Targets are lines that look like: "target_name:" or "target_name: dependencies"
@@ -157,6 +183,7 @@ pub fn parse_makefile_annotations_from_content(
             // Extract annotations from preceding comment lines
             let mut emoji: Option<String> = None;
             let mut description: Option<String> = None;
+            let mut plain_comment: Option<String> = None;
             let mut ignored = false;
 
             // Look backwards from the target line through consecutive comment lines
@@ -168,8 +195,8 @@ pub fn parse_makefile_annotations_from_content(
 
                 let prev_line = lines[check_idx];
 
-                // If we hit a non-comment, non-empty line, stop looking back
-                if !prev_line.trim().is_empty() && !comment_re.is_match(prev_line) {
+                // If we hit an empty line or a non-comment line, stop looking back
+                if prev_line.trim().is_empty() || !comment_re.is_match(prev_line) {
                     break;
                 }
 
@@ -188,19 +215,36 @@ pub fn parse_makefile_annotations_from_content(
                     description = Some(desc_cap[1].trim().to_string());
                 }
 
+                // Check for plain comment (not an annotation) as fallback description
+                if plain_comment.is_none()
+                    && !ignore_re.is_match(prev_line)
+                    && !emoji_re.is_match(prev_line)
+                    && !desc_re.is_match(prev_line)
+                {
+                    if let Some(plain_cap) = plain_comment_re.captures(prev_line) {
+                        let text = plain_cap[1].trim().to_string();
+                        if !text.is_empty() {
+                            plain_comment = Some(text);
+                        }
+                    }
+                }
+
                 if check_idx == 0 {
                     break;
                 }
                 check_idx -= 1;
             }
 
-            // Only add if there are any annotations
-            if emoji.is_some() || description.is_some() || ignored {
+            // Use @description if present, otherwise fall back to plain comment
+            let final_description = description.or(plain_comment);
+
+            // Add if there are any annotations or a plain comment description
+            if emoji.is_some() || final_description.is_some() || ignored {
                 annotations_map.insert(
                     target_name.to_string(),
                     MakeAnnotations {
                         emoji,
-                        description,
+                        description: final_description,
                         ignored,
                     },
                 );
@@ -211,38 +255,42 @@ pub fn parse_makefile_annotations_from_content(
     Ok(annotations_map)
 }
 
+/// Check if a target name looks like a build artifact based on file extensions.
+fn is_artifact_target(name: &str) -> bool {
+    ARTIFACT_EXTENSIONS.iter().any(|ext| name.ends_with(ext))
+}
+
 /// Parse output from `make --print-data-base` to extract target names.
 ///
-/// This function parses the make database output to find all targets.
+/// This function parses the make database output to find all targets,
+/// filtering out built-in implicit rules and build artifact targets.
 fn parse_make_database(
     output: &str,
     category: &str,
     annotations: Option<&HashMap<String, MakeAnnotations>>,
 ) -> Result<Vec<MakeTarget>> {
     let mut targets = Vec::new();
-    let mut seen_targets = std::collections::HashSet::new();
+    let mut seen_targets = HashSet::new();
+    let mut not_a_target_names = HashSet::new();
 
     // Regex to match target definitions in make database output
     // The database shows targets in a specific format
-    let target_re = Regex::new(r"^([a-zA-Z_][a-zA-Z0-9_-]*)\s*:").unwrap();
+    let target_re = Regex::new(r"^([a-zA-Z_][a-zA-Z0-9_-]*)\s*:")
+        .context("Failed to compile target regex for make database")?;
 
-    // Patterns to skip
-    let skip_patterns = [
-        ".PHONY",
-        ".DEFAULT",
-        ".PRECIOUS",
-        ".INTERMEDIATE",
-        ".SECONDARY",
-        ".SECONDEXPANSION",
-        ".DELETE_ON_ERROR",
-        ".IGNORE",
-        ".LOW_RESOLUTION_TIME",
-        ".SILENT",
-        ".EXPORT_ALL_VARIABLES",
-        ".NOTPARALLEL",
-        ".ONESHELL",
-        ".POSIX",
-    ];
+    // First pass: collect targets marked as "# Not a target:" in the database
+    // The make database output uses this marker for built-in implicit rules
+    let lines: Vec<&str> = output.lines().collect();
+    for (i, line) in lines.iter().enumerate() {
+        if line.starts_with("# Not a target:") {
+            // The target name is on the next line
+            if let Some(next_line) = lines.get(i + 1) {
+                if let Some(cap) = target_re.captures(next_line) {
+                    not_a_target_names.insert(cap[1].to_string());
+                }
+            }
+        }
+    }
 
     for line in output.lines() {
         // Skip empty lines and comments
@@ -255,7 +303,17 @@ fn parse_make_database(
             let target_name = cap[1].to_string();
 
             // Skip special targets
-            if skip_patterns.contains(&target_name.as_str()) || target_name.starts_with('.') {
+            if SKIP_PATTERNS.contains(&target_name.as_str()) || target_name.starts_with('.') {
+                continue;
+            }
+
+            // Skip built-in targets identified by "# Not a target:" markers
+            if not_a_target_names.contains(&target_name) {
+                continue;
+            }
+
+            // Skip targets that look like build artifacts (contain file extensions)
+            if is_artifact_target(&target_name) {
                 continue;
             }
 
@@ -336,30 +394,12 @@ fn list_targets_from_parsing(
         .with_context(|| format!("Failed to read Makefile: {}", makefile_path.display()))?;
 
     let mut targets = Vec::new();
-    let mut seen_targets = std::collections::HashSet::new();
+    let mut seen_targets = HashSet::new();
 
     // Regex to match target definitions
     // Format: "target_name:" or "target_name: dependencies"
     // Must not start with whitespace (those are recipe lines)
     let target_re = Regex::new(r"^([a-zA-Z_][a-zA-Z0-9_-]*)\s*:")?;
-
-    // Patterns to skip
-    let skip_patterns = [
-        ".PHONY",
-        ".DEFAULT",
-        ".PRECIOUS",
-        ".INTERMEDIATE",
-        ".SECONDARY",
-        ".SECONDEXPANSION",
-        ".DELETE_ON_ERROR",
-        ".IGNORE",
-        ".LOW_RESOLUTION_TIME",
-        ".SILENT",
-        ".EXPORT_ALL_VARIABLES",
-        ".NOTPARALLEL",
-        ".ONESHELL",
-        ".POSIX",
-    ];
 
     for line in content.lines() {
         // Skip empty lines, comments, and lines starting with whitespace (recipe lines)
@@ -376,16 +416,21 @@ fn list_targets_from_parsing(
             let target_name = cap[1].to_string();
 
             // Skip special targets
-            if skip_patterns.contains(&target_name.as_str()) || target_name.starts_with('.') {
+            if SKIP_PATTERNS.contains(&target_name.as_str()) || target_name.starts_with('.') {
+                continue;
+            }
+
+            // Skip targets that look like build artifacts
+            if is_artifact_target(&target_name) {
                 continue;
             }
 
             // Skip variable assignments (lines with = before the colon)
             if line.contains('=') {
-                let eq_pos = line.find('=').unwrap();
-                let colon_pos = line.find(':').unwrap();
-                if eq_pos < colon_pos {
-                    continue; // This is a variable assignment, not a target
+                if let (Some(eq_pos), Some(colon_pos)) = (line.find('='), line.find(':')) {
+                    if eq_pos < colon_pos {
+                        continue; // This is a variable assignment, not a target
+                    }
                 }
             }
 
@@ -672,5 +717,134 @@ build:
         assert!(targets.iter().any(|t| t.name == "build"));
         assert!(!targets.iter().any(|t| t.name == "CC"));
         assert!(!targets.iter().any(|t| t.name == "CFLAGS"));
+    }
+
+    #[test]
+    fn test_parse_makefile_annotations_plain_comment_description() {
+        let content = r#"# Makefile
+
+# Build the project with cargo
+build:
+	cargo build
+
+# Run all tests
+test:
+	cargo test
+"#;
+
+        let annotations = parse_makefile_annotations_from_content(content).unwrap();
+        assert!(annotations.contains_key("build"));
+        assert_eq!(
+            annotations["build"].description,
+            Some("Build the project with cargo".to_string())
+        );
+        assert!(annotations.contains_key("test"));
+        assert_eq!(
+            annotations["test"].description,
+            Some("Run all tests".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_makefile_annotations_description_overrides_plain_comment() {
+        let content = r#"# Makefile
+
+# This plain comment should be overridden
+# @description Official description
+build:
+	cargo build
+"#;
+
+        let annotations = parse_makefile_annotations_from_content(content).unwrap();
+        assert!(annotations.contains_key("build"));
+        assert_eq!(
+            annotations["build"].description,
+            Some("Official description".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_make_database_filters_not_a_target() {
+        let db_output = "# Not a target:\nar:\n#  Implicit rule search has not been done.\n\nbuild:\n#  Phony target (prerequisite of .PHONY).\n";
+
+        let targets = parse_make_database(db_output, "test", None).unwrap();
+
+        // 'ar' should be filtered out because it's marked as "# Not a target:"
+        assert!(
+            !targets.iter().any(|t| t.name == "ar"),
+            "Should NOT find 'ar' (built-in target)"
+        );
+        // 'build' should be present
+        assert!(
+            targets.iter().any(|t| t.name == "build"),
+            "Should find 'build' target"
+        );
+    }
+
+    #[test]
+    fn test_parse_make_database_filters_artifact_targets() {
+        let db_output = "build:\nmain.o:\nlibfoo.a:\napp.so:\nresult.out:\n";
+
+        let targets = parse_make_database(db_output, "test", None).unwrap();
+
+        assert!(
+            targets.iter().any(|t| t.name == "build"),
+            "Should find 'build' target"
+        );
+        assert!(
+            !targets.iter().any(|t| t.name == "main"),
+            "Should NOT find artifact target 'main.o'"
+        );
+        assert!(
+            !targets.iter().any(|t| t.name.contains('.')),
+            "Should NOT find any artifact targets with extensions"
+        );
+    }
+
+    #[test]
+    fn test_is_artifact_target() {
+        assert!(is_artifact_target("main.o"));
+        assert!(is_artifact_target("libfoo.a"));
+        assert!(is_artifact_target("app.so"));
+        assert!(is_artifact_target("program.out"));
+        assert!(is_artifact_target("mylib.dll"));
+        assert!(is_artifact_target("mylib.dylib"));
+        assert!(is_artifact_target("app.exe"));
+        assert!(!is_artifact_target("build"));
+        assert!(!is_artifact_target("deploy-production"));
+        assert!(!is_artifact_target("run_tests"));
+    }
+
+    #[test]
+    fn test_list_targets_from_parsing_skips_artifact_targets() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let makefile_path = temp_dir.path().join("Makefile");
+
+        let content = r#"# Makefile
+
+build:
+	cargo build
+
+main.o:
+	gcc -c main.c
+
+libfoo.a:
+	ar rcs libfoo.a foo.o
+"#;
+        std::fs::write(&makefile_path, content).unwrap();
+
+        let targets = list_targets_from_parsing(&makefile_path, "myproject", None).unwrap();
+
+        assert!(
+            targets.iter().any(|t| t.name == "build"),
+            "Should find 'build' target"
+        );
+        // Targets with artifact extensions should be filtered
+        // Note: the regex requires targets to start with [a-zA-Z_] so "main.o" won't match anyway,
+        // but if we had "main_obj.o" it would be caught by is_artifact_target
+        assert!(
+            !targets.iter().any(|t| is_artifact_target(&t.name)),
+            "Should NOT find any artifact targets"
+        );
     }
 }

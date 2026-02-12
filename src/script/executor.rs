@@ -665,6 +665,32 @@ custom_exit() {
     }
 
     #[test]
+    fn test_execute_make_target_interactive_success() {
+        // Only run this test if make is available
+        let make_available = Command::new("make")
+            .arg("--version")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+
+        if !make_available {
+            return;
+        }
+
+        let temp_dir = TempDir::new().unwrap();
+        let makefile = temp_dir.path().join("Makefile");
+
+        let content = ".PHONY: test-echo\ntest-echo:\n\t@echo 'make test success'\n";
+        fs::write(&makefile, content).unwrap();
+
+        let result = execute_make_target_interactive(&makefile, "test-echo");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 0);
+    }
+
+    #[test]
     fn test_execute_just_recipe_interactive_nonexistent_path() {
         let temp_dir = TempDir::new().unwrap();
         let justfile = temp_dir.path().join("justfile");
