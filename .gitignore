@@ -159,6 +159,9 @@ result
 
 .todos/
 
+# Nx cache
+.nx/
+
 # Sidecar worktree state files
 .sidecar/
 .sidecar-agent
