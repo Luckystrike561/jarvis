@@ -181,7 +181,7 @@ async fn run_application(args: Args) -> Result<()> {
             eprintln!("Searched in: {}", current_dir.display());
             eprintln!("Also checked: ./script/, ./scripts/, ./jarvis/ (if they exist)");
             eprintln!(
-                "\nPlease add bash scripts (.sh), package.json, devbox.json, Taskfile.yml, Makefile, justfile, or Cargo.toml to get started."
+                "\nPlease add bash scripts (.sh), package.json, devbox.json, Taskfile.yml, Makefile, justfile, Cargo.toml, or nx.json to get started."
             );
             eprintln!("\nExample bash script format:");
             eprintln!(r#"  #!/usr/bin/env bash"#);
@@ -373,6 +373,29 @@ async fn run_application(args: Args) -> Result<()> {
                                     ignored: cargo_target.ignored,
                                     script_type: script::ScriptType::CargoToml,
                                 }
+                            })
+                            .collect();
+                        all_functions.extend(functions);
+                    }
+                    Err(e) => {
+                        parse_errors.push((script_file.path.display().to_string(), e));
+                    }
+                }
+            }
+            script::ScriptType::NxJson => {
+                match script::list_nx_targets(&script_file.path, &script_file.category) {
+                    Ok(nx_targets) => {
+                        let functions: Vec<script::ScriptFunction> = nx_targets
+                            .into_iter()
+                            .filter(|t| !t.ignored)
+                            .map(|nx_target| script::ScriptFunction {
+                                name: nx_target.name,
+                                display_name: nx_target.display_name,
+                                category: nx_target.category,
+                                description: nx_target.description,
+                                emoji: nx_target.emoji,
+                                ignored: nx_target.ignored,
+                                script_type: script::ScriptType::NxJson,
                             })
                             .collect();
                         all_functions.extend(functions);
@@ -801,6 +824,9 @@ async fn execute_selected_function(
             }
             script::ScriptType::CargoToml => {
                 script::execute_cargo_target_interactive(&script_file.path, &func_name)?
+            }
+            script::ScriptType::NxJson => {
+                script::execute_nx_target_interactive(&script_file.path, &func_name)?
             }
         };
 
