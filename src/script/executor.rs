@@ -13,6 +13,7 @@
 //! | Devbox | `execute_devbox_script_interactive` | `devbox run script_name` |
 //! | Task | `execute_task_interactive` | `task --taskfile path task_name` |
 //! | Make | `execute_make_target_interactive` | `make --file path target_name` |
+//! | Just | `execute_just_recipe_interactive` | `just --justfile path recipe_name` |
 //!
 //! ## Key Design Decisions
 //!
@@ -274,6 +275,47 @@ pub fn execute_make_target_interactive(makefile_path: &Path, target_name: &str) 
                 "Failed to execute make target '{}' from {}",
                 target_name,
                 makefile_path.display()
+            )
+        })?;
+
+    Ok(status.code().unwrap_or(1))
+}
+
+/// Execute a just recipe interactively with full terminal access
+pub fn execute_just_recipe_interactive(justfile_path: &Path, recipe_name: &str) -> Result<i32> {
+    if !justfile_path.exists() {
+        anyhow::bail!("Justfile not found: {}", justfile_path.display());
+    }
+
+    if !justfile_path.is_file() {
+        anyhow::bail!("Path is not a file: {}", justfile_path.display());
+    }
+
+    if recipe_name.is_empty() {
+        anyhow::bail!("Recipe name cannot be empty");
+    }
+
+    let dir = justfile_path.parent().with_context(|| {
+        format!(
+            "Failed to get parent directory of: {}",
+            justfile_path.display()
+        )
+    })?;
+
+    let status = Command::new("just")
+        .arg("--justfile")
+        .arg(justfile_path)
+        .arg(recipe_name)
+        .current_dir(dir)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .with_context(|| {
+            format!(
+                "Failed to execute just recipe '{}' from {}",
+                recipe_name,
+                justfile_path.display()
             )
         })?;
 
@@ -618,6 +660,36 @@ custom_exit() {
         let temp_dir = TempDir::new().unwrap();
 
         let result = execute_make_target_interactive(temp_dir.path(), "build");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not a file"));
+    }
+
+    #[test]
+    fn test_execute_just_recipe_interactive_nonexistent_path() {
+        let temp_dir = TempDir::new().unwrap();
+        let justfile = temp_dir.path().join("justfile");
+
+        let result = execute_just_recipe_interactive(&justfile, "build");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[test]
+    fn test_execute_just_recipe_interactive_empty_name() {
+        let temp_dir = TempDir::new().unwrap();
+        let justfile = temp_dir.path().join("justfile");
+        fs::write(&justfile, "build:\n    echo building").unwrap();
+
+        let result = execute_just_recipe_interactive(&justfile, "");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("cannot be empty"));
+    }
+
+    #[test]
+    fn test_execute_just_recipe_interactive_directory_instead_of_file() {
+        let temp_dir = TempDir::new().unwrap();
+
+        let result = execute_just_recipe_interactive(temp_dir.path(), "build");
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not a file"));
     }
