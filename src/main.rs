@@ -181,7 +181,7 @@ async fn run_application(args: Args) -> Result<()> {
             eprintln!("Searched in: {}", current_dir.display());
             eprintln!("Also checked: ./script/, ./scripts/, ./jarvis/ (if they exist)");
             eprintln!(
-                "\nPlease add bash scripts (.sh), package.json, devbox.json, Taskfile.yml, Makefile, or justfile to get started."
+                "\nPlease add bash scripts (.sh), package.json, devbox.json, Taskfile.yml, Makefile, justfile, or Cargo.toml to get started."
             );
             eprintln!("\nExample bash script format:");
             eprintln!(r#"  #!/usr/bin/env bash"#);
@@ -339,6 +339,40 @@ async fn run_application(args: Args) -> Result<()> {
                                 emoji: just_recipe.emoji,
                                 ignored: just_recipe.ignored,
                                 script_type: script::ScriptType::Just,
+                            })
+                            .collect();
+                        all_functions.extend(functions);
+                    }
+                    Err(e) => {
+                        parse_errors.push((script_file.path.display().to_string(), e));
+                    }
+                }
+            }
+            script::ScriptType::CargoToml => {
+                match script::list_cargo_targets(&script_file.path, &script_file.category) {
+                    Ok(cargo_targets) => {
+                        let functions: Vec<script::ScriptFunction> = cargo_targets
+                            .into_iter()
+                            .filter(|t| !t.ignored)
+                            .map(|cargo_target| {
+                                // Prefix name with target type for executor dispatch
+                                let prefixed_name = match cargo_target.target_type {
+                                    script::cargo_parser::CargoTargetType::Binary => {
+                                        format!("bin:{}", cargo_target.name)
+                                    }
+                                    script::cargo_parser::CargoTargetType::Example => {
+                                        format!("example:{}", cargo_target.name)
+                                    }
+                                };
+                                script::ScriptFunction {
+                                    name: prefixed_name,
+                                    display_name: cargo_target.display_name,
+                                    category: cargo_target.category,
+                                    description: cargo_target.description,
+                                    emoji: cargo_target.emoji,
+                                    ignored: cargo_target.ignored,
+                                    script_type: script::ScriptType::CargoToml,
+                                }
                             })
                             .collect();
                         all_functions.extend(functions);
@@ -764,6 +798,9 @@ async fn execute_selected_function(
             }
             script::ScriptType::Just => {
                 script::execute_just_recipe_interactive(&script_file.path, &func_name)?
+            }
+            script::ScriptType::CargoToml => {
+                script::execute_cargo_target_interactive(&script_file.path, &func_name)?
             }
         };
 

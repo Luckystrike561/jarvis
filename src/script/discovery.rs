@@ -49,6 +49,7 @@ pub enum ScriptType {
     Task,
     Makefile,
     Just,
+    CargoToml,
 }
 
 #[derive(Debug, Clone)]
@@ -78,6 +79,9 @@ const MAKEFILE_NAMES: &[&str] = &["Makefile", "makefile", "GNUmakefile"];
 
 /// Justfile names to detect
 const JUSTFILE_NAMES: &[&str] = &["justfile", "Justfile", ".justfile"];
+
+/// Cargo manifest names to detect
+const CARGO_TOML_NAMES: &[&str] = &["Cargo.toml"];
 
 /// Cache for devbox availability check (checked once per process)
 static DEVBOX_AVAILABLE: OnceLock<bool> = OnceLock::new();
@@ -180,7 +184,8 @@ pub fn discover_single_file(file_path: &Path) -> Result<ScriptFile> {
         | ScriptType::DevboxJson
         | ScriptType::Task
         | ScriptType::Makefile
-        | ScriptType::Just => {
+        | ScriptType::Just
+        | ScriptType::CargoToml => {
             // For JSON/YAML config files and Makefile, use the parent directory name or the filename
             if let Some(parent) = file_path.parent() {
                 parent
@@ -207,6 +212,7 @@ pub fn discover_single_file(file_path: &Path) -> Result<ScriptFile> {
         ScriptType::Task => format!("📋 {}", format_display_name(&name)),
         ScriptType::Makefile => format!("🔨 {}", format_display_name(&name)),
         ScriptType::Just => format!("⚡ {}", format_display_name(&name)),
+        ScriptType::CargoToml => format!("🦀 {}", format_display_name(&name)),
         _ => format_display_name(&name),
     };
 
@@ -266,6 +272,16 @@ fn determine_script_type(filename: &str, file_path: &Path) -> Result<ScriptType>
         return Ok(ScriptType::Just);
     }
 
+    if CARGO_TOML_NAMES.contains(&filename) {
+        if !crate::script::cargo_parser::is_cargo_available() {
+            anyhow::bail!(
+                "Cargo.toml found but 'cargo' is not installed or not in PATH. \
+                Please install Rust/Cargo to use this file."
+            );
+        }
+        return Ok(ScriptType::CargoToml);
+    }
+
     // Check file extension for .sh files
     if let Some(ext) = file_path.extension() {
         if ext == "sh" {
@@ -276,7 +292,7 @@ fn determine_script_type(filename: &str, file_path: &Path) -> Result<ScriptType>
     // Unsupported file type
     anyhow::bail!(
         "Unsupported file type: '{}'. \
-        Supported types: .sh (bash), package.json (npm), devbox.json (devbox), Taskfile.yml (task), Makefile (make), justfile (just)",
+        Supported types: .sh (bash), package.json (npm), devbox.json (devbox), Taskfile.yml (task), Makefile (make), justfile (just), Cargo.toml (cargo)",
         filename
     );
 }
@@ -452,6 +468,34 @@ fn discover_scripts_with_depth(scripts_dir: &Path, max_depth: usize) -> Result<V
                     category,
                     display_name,
                     script_type: ScriptType::Just,
+                });
+                continue;
+            }
+
+            if CARGO_TOML_NAMES.contains(&filename) {
+                if !crate::script::cargo_parser::is_cargo_available() {
+                    continue;
+                }
+
+                let name = if let Some(parent) = path.parent() {
+                    parent
+                        .file_name()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("cargo")
+                        .to_string()
+                } else {
+                    "cargo".to_string()
+                };
+
+                let category = name.clone();
+                let display_name = format!("🦀 {}", format_display_name(&name));
+
+                scripts.push(ScriptFile {
+                    path: path.to_path_buf(),
+                    name,
+                    category,
+                    display_name,
+                    script_type: ScriptType::CargoToml,
                 });
                 continue;
             }
