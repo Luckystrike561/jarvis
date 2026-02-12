@@ -6,7 +6,8 @@
     "rustfmt@1.89.0",
     "clippy@1.89.0",
     "rustup@1.28.2",
-    "go-task@3.45.5"
+    "go-task@3.45.5",
+    "just@latest"
   ],
   "shell": {
     "init_hook": [
@@ -24,13 +25,13 @@
       "echo ''"
     ],
     "scripts": {
-      "build": "cargo build",
-      "dev": "cargo run",
-      "check": "cargo clippy -- -D warnings && cargo fmt -- --check",
-      "fmt": "cargo fmt",
-      "test": "cargo test && cargo clippy -- -D warnings",
-      "release": "cargo build --release && echo 'Binary available at: target/release/jarvis'",
-      "install": "cargo install --path .",
+      "build":           "cargo build",
+      "dev":             "cargo run",
+      "check":           "cargo clippy -- -D warnings && cargo fmt -- --check",
+      "fmt":             "cargo fmt",
+      "test":            "cargo test && cargo clippy -- -D warnings",
+      "release":         "cargo build --release && echo 'Binary available at: target/release/jarvis'",
+      "install":         "cargo install --path .",
       "deploy-homebrew": "bash scripts/update-formula.sh"
     }
   }
