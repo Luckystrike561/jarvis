@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   update-version:
-    name: Update Cargo.toml version
+    name: Update version in Cargo.toml, flake.nix, and Homebrew formula
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -53,10 +53,47 @@ jobs:
           sed -i "s/^version = .*/version = \"$VERSION\"/" Cargo.toml
           echo "Updated Cargo.toml to version $VERSION"
 
+      - name: Update flake.nix version
+        env:
+          VERSION: ${{ steps.extract_version.outputs.version }}
+        run: |
+          sed -i "s/version = \"[0-9]*\.[0-9]*\.[0-9]*\"/version = \"$VERSION\"/" flake.nix
+          echo "Updated flake.nix to version $VERSION"
+
+      - name: Update Homebrew formula
+        env:
+          VERSION: ${{ steps.extract_version.outputs.version }}
+        run: |
+          TARBALL_URL="https://github.com/Luckystrike561/jarvis/archive/refs/tags/v${VERSION}.tar.gz"
+          echo "Downloading tarball from: $TARBALL_URL"
+
+          TEMP_FILE=$(mktemp)
+          trap 'rm -f "$TEMP_FILE"' EXIT
+
+          HTTP_CODE=$(curl -sL -w "%{http_code}" -o "$TEMP_FILE" "$TARBALL_URL")
+          if [[ "$HTTP_CODE" != "200" ]]; then
+            echo "WARNING: Failed to download tarball (HTTP $HTTP_CODE). Skipping Homebrew formula update."
+            echo "The formula can be updated later with: devbox run deploy-homebrew"
+            exit 0
+          fi
+
+          SHA256=$(sha256sum "$TEMP_FILE" | cut -d' ' -f1)
+          echo "SHA256: $SHA256"
+
+          sed -i "s|url \"https://github.com/Luckystrike561/jarvis/archive/refs/tags/v.*\.tar\.gz\"|url \"https://github.com/Luckystrike561/jarvis/archive/refs/tags/v${VERSION}.tar.gz\"|" homebrew/jarvis.rb
+          sed -i "s/sha256 \"[a-f0-9]*\"/sha256 \"${SHA256}\"/" homebrew/jarvis.rb
+          echo "Updated homebrew/jarvis.rb to version $VERSION"
+
       - name: Verify changes
         run: |
-          echo "Updated Cargo.toml:"
+          echo "=== Cargo.toml ==="
           grep "^version" Cargo.toml
+          echo ""
+          echo "=== flake.nix ==="
+          grep "version = " flake.nix
+          echo ""
+          echo "=== homebrew/jarvis.rb ==="
+          grep -E "url |sha256 " homebrew/jarvis.rb
 
       - name: Commit and push changes
         env:
@@ -64,7 +101,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Cargo.toml
+          git add Cargo.toml flake.nix homebrew/jarvis.rb
           if git diff --staged --quiet; then
             echo "No changes to commit - version already up to date"
           else
