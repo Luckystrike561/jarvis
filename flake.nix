@@ -24,7 +24,7 @@
 
         jarvis = pkgs.rustPlatform.buildRustPackage rec {
           pname = "jarvis-tui";
-          version = "0.1.9";
+          version = "0.1.12";
 
           src = ./.;
 
