@@ -410,8 +410,10 @@ pub fn execute_nx_target_interactive(nx_json_path: &Path, target_name: &str) -> 
     })?;
 
     // Determine whether to use npx nx or nx
+    // stdin must be null to prevent npx from prompting to install nx
     let npx_available = Command::new("npx")
         .args(["nx", "--version"])
+        .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()

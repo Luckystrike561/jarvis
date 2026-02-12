@@ -47,6 +47,9 @@ use crate::script::discovery::format_display_name;
 /// Cache for nx availability check (checked once per process)
 static NX_AVAILABLE: OnceLock<bool> = OnceLock::new();
 
+/// Cache for whether npx nx (local) is preferred over global nx
+static NX_USE_NPX: OnceLock<bool> = OnceLock::new();
+
 /// Nx target item for TUI display (mirrors other script types)
 #[derive(Debug, Clone)]
 pub struct NxTarget {
@@ -66,8 +69,10 @@ pub struct NxTarget {
 pub fn is_nx_available() -> bool {
     *NX_AVAILABLE.get_or_init(|| {
         // Check for local nx via npx first
+        // stdin must be null to prevent npx from prompting to install nx
         let npx_available = Command::new("npx")
             .args(["nx", "--version"])
+            .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status()
@@ -81,6 +86,7 @@ pub fn is_nx_available() -> bool {
         // Fall back to global nx
         Command::new("nx")
             .arg("--version")
+            .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status()
@@ -92,16 +98,20 @@ pub fn is_nx_available() -> bool {
 /// Determine the Nx command to use (npx nx or nx).
 ///
 /// Returns `("npx", vec!["nx"])` for local or `("nx", vec![])` for global.
+/// Caches the result to avoid repeated subprocess spawns.
 fn nx_command() -> (&'static str, Vec<&'static str>) {
-    let npx_available = Command::new("npx")
-        .args(["nx", "--version"])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false);
+    let use_npx = *NX_USE_NPX.get_or_init(|| {
+        Command::new("npx")
+            .args(["nx", "--version"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    });
 
-    if npx_available {
+    if use_npx {
         ("npx", vec!["nx"])
     } else {
         ("nx", vec![])
@@ -154,6 +164,7 @@ fn list_projects(workspace_dir: &Path) -> Result<Vec<String>> {
     let output = Command::new(cmd)
         .args(&base_args)
         .current_dir(workspace_dir)
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .output()
@@ -192,6 +203,7 @@ fn get_project_targets(
     let output = Command::new(cmd)
         .args(&base_args)
         .current_dir(workspace_dir)
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .output()
