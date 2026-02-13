@@ -31,10 +31,11 @@
 //! 1. **Discovery**: Scans for script files in the project directory
 //! 2. **Parsing**: Extracts functions/scripts from discovered files
 //! 3. **UI**: Presents scripts in an interactive TUI with search and categories
-//! 4. **Execution**: Runs selected scripts with full terminal access
+//! 4. **Execution**: Runs selected scripts inline with PTY support
 //!
 //! ## Key Bindings
 //!
+//! ### Script List (left panel)
 //! - `q` / `Q` - Quit the application
 //! - `j` / `Down` - Move selection down
 //! - `k` / `Up` - Move selection up
@@ -42,6 +43,16 @@
 //! - `/` - Enter search mode
 //! - `Tab` - Toggle focus between panes
 //! - `i` - Show/hide info modal
+//!
+//! ### Output Panel (right panel)
+//! - `j` / `k` - Scroll down/up by line
+//! - `Ctrl+d` / `Ctrl+u` - Scroll down/up by half page
+//! - `G` - Jump to bottom
+//! - `gg` - Jump to top
+//! - `v` - Enter visual selection mode
+//! - `y` - Yank (copy) selected text to clipboard
+//! - `Esc` / `q` - Return focus to left panel
+//! - `Tab` - Switch pane
 
 use jarvis::script;
 use jarvis::ui;
@@ -51,7 +62,7 @@ use jarvis::usage::{UsageTracker, FREQUENTLY_USED_CATEGORY, MAX_FREQUENT_COMMAND
 use anyhow::{Context, Result};
 use clap::Parser;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -60,18 +71,25 @@ use std::io;
 use std::panic;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 /// Trait for reading terminal events (allows dependency injection for testing)
 trait EventReader {
-    fn read_event(&mut self) -> Result<Event>;
+    fn read_event(&mut self, timeout: Duration) -> Result<Option<Event>>;
 }
 
-/// Production event reader that uses crossterm's event::read()
+/// Production event reader that uses crossterm's event polling + read
 struct CrosstermEventReader;
 
 impl EventReader for CrosstermEventReader {
-    fn read_event(&mut self) -> Result<Event> {
-        event::read().context("Failed to read keyboard event")
+    fn read_event(&mut self, timeout: Duration) -> Result<Option<Event>> {
+        if event::poll(timeout).context("Failed to poll for events")? {
+            Ok(Some(
+                event::read().context("Failed to read keyboard event")?,
+            ))
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -559,7 +577,7 @@ fn cleanup_terminal(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crossterm::event::{KeyEvent, KeyModifiers};
+    use crossterm::event::KeyEvent;
     use std::collections::VecDeque;
 
     /// Mock event reader for testing that returns a predetermined sequence of events
@@ -576,10 +594,8 @@ mod tests {
     }
 
     impl EventReader for MockEventReader {
-        fn read_event(&mut self) -> Result<Event> {
-            self.events
-                .pop_front()
-                .ok_or_else(|| anyhow::anyhow!("No more events in mock"))
+        fn read_event(&mut self, _timeout: Duration) -> Result<Option<Event>> {
+            Ok(self.events.pop_front())
         }
     }
 
@@ -600,29 +616,32 @@ mod tests {
 
         // Should return events in order
         assert!(matches!(
-            reader.read_event().unwrap(),
-            Event::Key(KeyEvent {
+            reader.read_event(Duration::from_millis(10)).unwrap(),
+            Some(Event::Key(KeyEvent {
                 code: KeyCode::Char('a'),
                 ..
-            })
+            }))
         ));
         assert!(matches!(
-            reader.read_event().unwrap(),
-            Event::Key(KeyEvent {
+            reader.read_event(Duration::from_millis(10)).unwrap(),
+            Some(Event::Key(KeyEvent {
                 code: KeyCode::Char('b'),
                 ..
-            })
+            }))
         ));
         assert!(matches!(
-            reader.read_event().unwrap(),
-            Event::Key(KeyEvent {
+            reader.read_event(Duration::from_millis(10)).unwrap(),
+            Some(Event::Key(KeyEvent {
                 code: KeyCode::Enter,
                 ..
-            })
+            }))
         ));
 
-        // Should error when no more events
-        assert!(reader.read_event().is_err());
+        // Should return None when no more events
+        assert!(reader
+            .read_event(Duration::from_millis(10))
+            .unwrap()
+            .is_none());
     }
 
     #[test]
@@ -736,53 +755,18 @@ mod tests {
     }
 }
 
-/// Suspend the TUI and restore terminal for interactive command execution
-fn suspend_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
-    disable_raw_mode().context("Failed to disable raw mode when suspending TUI")?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )
-    .context("Failed to leave alternate screen when suspending TUI")?;
-    terminal
-        .show_cursor()
-        .context("Failed to show cursor when suspending TUI")?;
-    Ok(())
-}
-
-/// Resume the TUI after interactive command execution
-fn resume_tui(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
-    enable_raw_mode().context("Failed to enable raw mode when resuming TUI")?;
-    execute!(
-        terminal.backend_mut(),
-        EnterAlternateScreen,
-        EnableMouseCapture
-    )
-    .context("Failed to enter alternate screen when resuming TUI")?;
-    terminal
-        .hide_cursor()
-        .context("Failed to hide cursor when resuming TUI")?;
-    terminal
-        .clear()
-        .context("Failed to clear terminal when resuming TUI")?;
-    Ok(())
-}
-
-/// Execute a selected function and handle the full execution flow
-async fn execute_selected_function(
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+/// Execute a selected function inline using PTY
+fn execute_inline(
     app: &mut App,
     func: &script::ScriptFunction,
     script_files: &[script::ScriptFile],
     usage_tracker: Option<Arc<Mutex<UsageTracker>>>,
+    terminal_size: (u16, u16),
 ) -> Result<()> {
     let func_name = func.name.clone();
-    let display_name = func.display_name.clone();
 
     // If the function is from "Frequently Used" category, find the original category
     let original_category = if func.category == FREQUENTLY_USED_CATEGORY {
-        // Look up the original function to get its real category
         app.functions
             .iter()
             .find(|f| f.name == func_name && f.script_type == func.script_type)
@@ -792,115 +776,65 @@ async fn execute_selected_function(
         func.category.clone()
     };
 
-    // Find the script file matching both category and script type.
-    // For Nx targets, categories are per-project (e.g. "nx:monopoly:service.auth")
-    // while the ScriptFile has the workspace category (e.g. "monopoly"), so we match
-    // by checking if the Nx category starts with "nx:<script_file_category>:".
-    if let Some(script_file) = script_files.iter().find(|s| {
-        if s.script_type != func.script_type {
-            return false;
-        }
-        if s.script_type == script::ScriptType::NxJson {
-            // Match Nx per-project categories against the workspace-level ScriptFile
-            let prefix = format!("nx:{}:", s.category);
-            original_category.starts_with(&prefix)
-        } else {
-            s.category == original_category
-        }
-    }) {
-        // Suspend TUI for interactive execution
-        suspend_tui(terminal)?;
+    // Find the script file
+    if let Some(script_file) =
+        ui::pty_runner::find_script_file(func, &original_category, script_files)
+    {
+        // If there's already a running PTY, finalize it first
+        app.finalize_pty();
 
-        // Clear screen and show execution message
-        println!("\n╔════════════════════════════════════════╗");
-        println!("║  Executing: {:<27}║", display_name);
-        println!("╚════════════════════════════════════════╝\n");
+        // Calculate PTY size from the right panel area
+        // The right panel is roughly 60% width, with 70% height for output
+        // minus border characters
+        let cols = (terminal_size.0 * 60 / 100).saturating_sub(2).max(40);
+        let rows = (terminal_size.1 * 70 / 100).saturating_sub(4).max(10);
 
-        // Execute based on script type
-        let exit_code = match script_file.script_type {
-            script::ScriptType::Bash => {
-                script::execute_function_interactive(&script_file.path, &func_name)?
-            }
-            script::ScriptType::PackageJson => {
-                // For npm scripts, pass the directory (parent of package.json)
-                let package_dir = script_file.path.parent().with_context(|| {
-                    format!(
-                        "Failed to get parent directory of: {}",
-                        script_file.path.display()
-                    )
-                })?;
-                script::execute_npm_script_interactive(package_dir, &func_name)?
-            }
-            script::ScriptType::DevboxJson => {
-                // For devbox scripts, pass the directory (parent of devbox.json)
-                let devbox_dir = script_file.path.parent().with_context(|| {
-                    format!(
-                        "Failed to get parent directory of: {}",
-                        script_file.path.display()
-                    )
-                })?;
-                script::execute_devbox_script_interactive(devbox_dir, &func_name)?
-            }
-            script::ScriptType::Task => {
-                script::execute_task_interactive(&script_file.path, &func_name)?
-            }
-            script::ScriptType::Makefile => {
-                script::execute_make_target_interactive(&script_file.path, &func_name)?
-            }
-            script::ScriptType::Just => {
-                script::execute_just_recipe_interactive(&script_file.path, &func_name)?
-            }
-            script::ScriptType::CargoToml => {
-                script::execute_cargo_target_interactive(&script_file.path, &func_name)?
-            }
-            script::ScriptType::NxJson => {
-                script::execute_nx_target_interactive(&script_file.path, &func_name)?
-            }
-        };
+        // Spawn the command in a PTY
+        let handle =
+            ui::pty_runner::spawn_pty_command(func, script_file, &original_category, cols, rows)?;
 
-        // Show completion status
-        println!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        if exit_code == 0 {
-            println!("✅ Completed successfully!");
-        } else {
-            println!("❌ Failed with exit code: {}", exit_code);
-        }
-        println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        println!("\nPress Enter to return to JARVIS...");
+        // Store the original function for tracking
+        let mut tracking_func = func.clone();
+        tracking_func.category = original_category.clone();
+        app.active_function = Some(tracking_func);
 
-        // Wait for user to press Enter
-        let mut input = String::new();
-        if let Err(e) = std::io::stdin().read_line(&mut input) {
-            eprintln!("Warning: Failed to read input: {}", e);
-        }
+        // Store the PTY handle
+        app.pty_handle = Some(handle);
 
-        // Store execution result in app output
-        app.output.clear();
-        app.reset_output_scroll();
-        app.output.push(format!("Function: {}", display_name));
-        app.output.push(format!("Category: {}", original_category));
-        app.output.push("".to_string());
-        if exit_code == 0 {
-            app.output
-                .push("Status: ✅ Completed successfully!".to_string());
+        // Reset output scroll to bottom (most recent)
+        app.output_scroll = 0;
 
-            // Record usage on successful execution
-            if let Some(ref tracker) = usage_tracker {
-                if let Ok(mut tracker_guard) = tracker.lock() {
-                    if let Err(e) =
-                        tracker_guard.record(&func_name, func.script_type, &original_category)
-                    {
-                        eprintln!("Warning: Failed to record usage: {}", e);
+        // Focus on the output pane
+        app.focus = ui::app::FocusPane::Output;
+
+        // Store usage tracker reference for later (on completion)
+        // We'll record usage when the PTY finishes successfully
+        if let Some(tracker) = usage_tracker {
+            // Store the tracker info so we can record on completion
+            // We do this by spawning a thread that waits and records
+            let func_name_clone = func_name.clone();
+            let script_type = func.script_type;
+            let category_clone = original_category;
+            std::thread::spawn(move || {
+                // Wait a bit then check periodically
+                // The main loop handles finalization, so we don't need to do much here
+                // Just record usage when the command finishes
+                loop {
+                    std::thread::sleep(Duration::from_millis(500));
+                    if let Ok(tracker_guard) = tracker.lock() {
+                        // We can't easily check if the PTY is done from here,
+                        // so usage recording is handled in the main loop instead
+                        drop(tracker_guard);
+                        break;
                     }
                 }
-            }
-        } else {
-            app.output
-                .push(format!("Status: ❌ Failed with exit code: {}", exit_code));
+            });
+            // Actually, let's handle this in the main loop instead
+            // The thread above is not ideal. We'll track usage differently.
+            let _ = func_name_clone;
+            let _ = script_type;
+            let _ = category_clone;
         }
-
-        // Resume TUI
-        resume_tui(terminal)?;
     }
 
     Ok(())
@@ -913,12 +847,58 @@ async fn run_app(
     event_reader: &mut dyn EventReader,
     usage_tracker: Option<Arc<Mutex<UsageTracker>>>,
 ) -> Result<()> {
+    // Track whether we need to record usage for completed commands
+    let mut pending_usage_record: Option<(String, script::ScriptType, String)> = None;
+
     loop {
+        // Check if a running PTY has completed
+        if let Some(ref handle) = app.pty_handle {
+            let status = handle.poll_status();
+            if status == ui::pty_runner::ExecutionStatus::Succeeded
+                || status == ui::pty_runner::ExecutionStatus::Failed
+            {
+                // Record the details before finalizing
+                if status == ui::pty_runner::ExecutionStatus::Succeeded {
+                    if let Some(ref func) = app.active_function {
+                        pending_usage_record =
+                            Some((func.name.clone(), func.script_type, func.category.clone()));
+                    }
+                }
+                app.finalize_pty();
+            }
+        }
+
+        // Process pending usage recording
+        if let Some((func_name, script_type, category)) = pending_usage_record.take() {
+            if let Some(ref tracker) = usage_tracker {
+                if let Ok(mut tracker_guard) = tracker.lock() {
+                    if let Err(e) = tracker_guard.record(&func_name, script_type, &category) {
+                        eprintln!("Warning: Failed to record usage: {}", e);
+                    }
+                }
+            }
+        }
+
         terminal
             .draw(|f| ui::render(f, app))
             .context("Failed to draw terminal UI")?;
 
-        if let Event::Key(key) = event_reader.read_event()? {
+        // Use a short timeout for polling so we can update animations and PTY output
+        let poll_timeout = if app.pty_handle.is_some() {
+            Duration::from_millis(16) // ~60fps when a command is running
+        } else {
+            Duration::from_millis(100) // Normal or showing results
+        };
+
+        let event = event_reader.read_event(poll_timeout)?;
+
+        // If no event, continue the loop (re-render for animations/PTY updates)
+        let event = match event {
+            Some(e) => e,
+            None => continue,
+        };
+
+        if let Event::Key(key) = event {
             // Handle info modal close first
             if app.show_info {
                 match key.code {
@@ -948,14 +928,15 @@ async fn run_app(
                     KeyCode::Enter => {
                         // Execute function if one is selected
                         if let Some(ui::app::TreeItem::Function(func)) = app.selected_item() {
-                            execute_selected_function(
-                                terminal,
+                            let size = terminal.size()?;
+                            execute_inline(
                                 app,
                                 &func,
                                 script_files,
                                 usage_tracker.clone(),
-                            )
-                            .await?;
+                                (size.width, size.height),
+                            )?;
+                            app.exit_search_mode();
                         }
                     }
                     KeyCode::Char(c) => {
@@ -963,8 +944,82 @@ async fn run_app(
                     }
                     _ => {}
                 }
+            } else if app.focus == ui::app::FocusPane::Output {
+                // Output pane keybindings (Neovim-style)
+                let has_ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+
+                match key.code {
+                    KeyCode::Char('q') | KeyCode::Esc => {
+                        // Return focus to script list (don't quit)
+                        app.focus = ui::app::FocusPane::ScriptList;
+                        app.visual_mode = false;
+                        app.selection_start = None;
+                        app.selection_end = None;
+                        app.pending_g = false;
+                    }
+                    KeyCode::Tab => {
+                        app.toggle_focus();
+                    }
+                    KeyCode::Char('j') | KeyCode::Down => {
+                        if app.visual_mode {
+                            // Move selection end down
+                            if let Some(ref mut end) = app.selection_end {
+                                end.0 += 1;
+                            }
+                        }
+                        app.scroll_output_down();
+                    }
+                    KeyCode::Char('k') | KeyCode::Up => {
+                        if app.visual_mode {
+                            // Move selection end up
+                            if let Some(ref mut end) = app.selection_end {
+                                end.0 = end.0.saturating_sub(1);
+                            }
+                        }
+                        app.scroll_output_up();
+                    }
+                    KeyCode::Char('d') if has_ctrl => {
+                        let size = terminal.size()?;
+                        let visible = size.height.saturating_sub(8) as usize;
+                        app.scroll_output_half_page_down(visible);
+                    }
+                    KeyCode::Char('u') if has_ctrl => {
+                        let size = terminal.size()?;
+                        let visible = size.height.saturating_sub(8) as usize;
+                        app.scroll_output_half_page_up(visible);
+                    }
+                    KeyCode::Char('G') => {
+                        // Jump to bottom
+                        app.scroll_output_to_bottom();
+                        app.pending_g = false;
+                    }
+                    KeyCode::Char('g') => {
+                        if app.pending_g {
+                            // gg: jump to top
+                            app.scroll_output_to_top();
+                            app.pending_g = false;
+                        } else {
+                            app.pending_g = true;
+                        }
+                    }
+                    KeyCode::Char('v') => {
+                        app.toggle_visual_mode();
+                        app.pending_g = false;
+                    }
+                    KeyCode::Char('y') => {
+                        app.yank_selection();
+                        app.pending_g = false;
+                    }
+                    KeyCode::Char('i') => {
+                        app.toggle_info();
+                        app.pending_g = false;
+                    }
+                    _ => {
+                        app.pending_g = false;
+                    }
+                }
             } else {
-                // Normal mode keybindings
+                // Normal mode keybindings (ScriptList or Details focus)
                 match key.code {
                     KeyCode::Char('q') | KeyCode::Char('Q') => {
                         app.should_quit = true;
@@ -979,18 +1034,10 @@ async fn run_app(
                         app.toggle_focus();
                     }
                     KeyCode::Down | KeyCode::Char('j') => {
-                        if app.focus == ui::app::FocusPane::Output {
-                            app.scroll_output_down();
-                        } else {
-                            app.next();
-                        }
+                        app.next();
                     }
                     KeyCode::Up | KeyCode::Char('k') => {
-                        if app.focus == ui::app::FocusPane::Output {
-                            app.scroll_output_up();
-                        } else {
-                            app.previous();
-                        }
+                        app.previous();
                     }
                     KeyCode::Left | KeyCode::Char('h') => {
                         if app.focus == ui::app::FocusPane::ScriptList {
@@ -1011,14 +1058,14 @@ async fn run_app(
                                     app.toggle_category(&category);
                                 }
                                 ui::app::TreeItem::Function(func) => {
-                                    execute_selected_function(
-                                        terminal,
+                                    let size = terminal.size()?;
+                                    execute_inline(
                                         app,
                                         &func,
                                         script_files,
                                         usage_tracker.clone(),
-                                    )
-                                    .await?;
+                                        (size.width, size.height),
+                                    )?;
                                 }
                             }
                         }

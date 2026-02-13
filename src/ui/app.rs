@@ -11,6 +11,8 @@
 //! - UI focus (which pane is active)
 //! - Expanded/collapsed category state
 //! - Frequently used commands tracking
+//! - Inline terminal execution state with PTY
+//! - Per-target command history (session-scoped)
 //!
 //! ## Navigation Model
 //!
@@ -34,11 +36,13 @@
 //! The UI has multiple focusable panes managed by [`FocusPane`]:
 //! - `ScriptList` - The main script/category tree
 //! - `Details` - The details panel showing script info
-//! - `Output` - The output panel showing execution results
+//! - `Output` - The output panel showing execution results (with inline terminal)
 
 use crate::script::ScriptFunction;
+use crate::ui::pty_runner::{CommandHistory, ExecutionStatus, PtyHandle};
 use crate::usage::FREQUENTLY_USED_CATEGORY;
 use std::collections::HashMap;
+use std::time::Instant;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum FocusPane {
@@ -63,6 +67,30 @@ pub struct App {
     pub show_info: bool,
     pub category_display_names: HashMap<String, String>,
     pub project_title: String,
+
+    // --- Inline terminal execution state ---
+    /// Currently running PTY process handle (if any)
+    pub pty_handle: Option<PtyHandle>,
+    /// Session-scoped command history keyed by target identifier
+    pub command_history: CommandHistory,
+    /// The function currently being executed or last executed
+    pub active_function: Option<ScriptFunction>,
+    /// Animation tick counter for running state border animation
+    pub animation_tick: u64,
+    /// Last animation update timestamp
+    pub last_animation_tick: Instant,
+    /// Whether visual selection mode is active in the output pane
+    pub visual_mode: bool,
+    /// Selection start position (row, col) in the terminal output
+    pub selection_start: Option<(usize, usize)>,
+    /// Selection end/cursor position (row, col) in the terminal output
+    pub selection_end: Option<(usize, usize)>,
+    /// Output search mode
+    pub output_search_mode: bool,
+    /// Output search query
+    pub output_search_query: String,
+    /// Whether the 'g' key was pressed (waiting for second 'g' for gg)
+    pub pending_g: bool,
 }
 
 impl App {
@@ -82,6 +110,17 @@ impl App {
             show_info: false,
             category_display_names: HashMap::new(),
             project_title,
+            pty_handle: None,
+            command_history: CommandHistory::new(),
+            active_function: None,
+            animation_tick: 0,
+            last_animation_tick: Instant::now(),
+            visual_mode: false,
+            selection_start: None,
+            selection_end: None,
+            output_search_mode: false,
+            output_search_query: String::new(),
+            pending_g: false,
         }
     }
 
@@ -105,7 +144,7 @@ impl App {
         self.focus = match self.focus {
             FocusPane::ScriptList => FocusPane::Details,
             FocusPane::Details => {
-                if !self.output.is_empty() {
+                if self.has_terminal_output() {
                     FocusPane::Output
                 } else {
                     FocusPane::ScriptList
@@ -113,6 +152,169 @@ impl App {
             }
             FocusPane::Output => FocusPane::ScriptList,
         };
+        // Clear visual mode when leaving output
+        if self.focus != FocusPane::Output {
+            self.visual_mode = false;
+            self.selection_start = None;
+            self.selection_end = None;
+            self.pending_g = false;
+        }
+    }
+
+    /// Check if there is terminal output to display (either active PTY or history)
+    pub fn has_terminal_output(&self) -> bool {
+        if self.pty_handle.is_some() {
+            return true;
+        }
+        // Check if the currently selected function has history
+        if let Some(ref func) = self.active_function {
+            if self.command_history.get(func).is_some() {
+                return true;
+            }
+        }
+        // Legacy output support
+        !self.output.is_empty()
+    }
+
+    /// Get the execution status for the current target (active PTY or history)
+    pub fn current_execution_status(&self) -> ExecutionStatus {
+        if let Some(ref handle) = self.pty_handle {
+            return handle.poll_status();
+        }
+        if let Some(ref func) = self.active_function {
+            if let Some(state) = self.command_history.get(func) {
+                return state.status;
+            }
+        }
+        ExecutionStatus::Idle
+    }
+
+    /// Update the animation tick (called from the event loop)
+    pub fn tick_animation(&mut self) {
+        let now = Instant::now();
+        if now.duration_since(self.last_animation_tick).as_millis() >= 100 {
+            self.animation_tick = self.animation_tick.wrapping_add(1);
+            self.last_animation_tick = now;
+        }
+    }
+
+    /// Finalize a completed PTY handle: move it into command history
+    pub fn finalize_pty(&mut self) {
+        if let Some(handle) = self.pty_handle.take() {
+            let status = handle.poll_status();
+            if status == ExecutionStatus::Succeeded || status == ExecutionStatus::Failed {
+                if let Some(ref func) = self.active_function {
+                    let state = handle.into_execution_state();
+                    self.command_history.insert(func, state);
+                }
+            } else {
+                // Still running, put it back
+                self.pty_handle = Some(handle);
+            }
+        }
+    }
+
+    /// Get the total number of scrollable lines in the current terminal output
+    pub fn terminal_total_lines(&self) -> usize {
+        if let Some(ref handle) = self.pty_handle {
+            crate::ui::terminal_widget::total_content_lines(&handle.parser)
+        } else if let Some(ref func) = self.active_function {
+            if let Some(state) = self.command_history.get(func) {
+                crate::ui::terminal_widget::total_content_lines(&state.parser)
+            } else {
+                self.output.len()
+            }
+        } else {
+            self.output.len()
+        }
+    }
+
+    /// Scroll output down by half a page
+    pub fn scroll_output_half_page_down(&mut self, visible_height: usize) {
+        let half = visible_height / 2;
+        let total = self.terminal_total_lines();
+        let max_scroll = total.saturating_sub(visible_height);
+        // output_scroll represents "how many lines from the bottom we've scrolled up"
+        // So scrolling "down" (towards bottom) means decreasing the offset
+        self.output_scroll = self.output_scroll.saturating_sub(half);
+        let _ = max_scroll; // max_scroll not needed for down scroll
+    }
+
+    /// Scroll output up by half a page
+    pub fn scroll_output_half_page_up(&mut self, visible_height: usize) {
+        let half = visible_height / 2;
+        let total = self.terminal_total_lines();
+        let max_scroll = total.saturating_sub(visible_height);
+        self.output_scroll = (self.output_scroll + half).min(max_scroll);
+    }
+
+    /// Jump to the bottom of output
+    pub fn scroll_output_to_bottom(&mut self) {
+        self.output_scroll = 0;
+    }
+
+    /// Jump to the top of output
+    pub fn scroll_output_to_top(&mut self) {
+        let total = self.terminal_total_lines();
+        // Max scroll would show the very first line at the top
+        self.output_scroll = total;
+    }
+
+    /// Toggle visual selection mode
+    pub fn toggle_visual_mode(&mut self) {
+        self.visual_mode = !self.visual_mode;
+        if self.visual_mode {
+            // Start selection at current cursor position (middle of screen)
+            let cursor_pos = (0, 0);
+            self.selection_start = Some(cursor_pos);
+            self.selection_end = Some(cursor_pos);
+        } else {
+            self.selection_start = None;
+            self.selection_end = None;
+        }
+    }
+
+    /// Copy selected text to clipboard
+    pub fn yank_selection(&mut self) {
+        if !self.visual_mode {
+            return;
+        }
+
+        let start = match self.selection_start {
+            Some(s) => s,
+            None => return,
+        };
+        let end = match self.selection_end {
+            Some(e) => e,
+            None => return,
+        };
+
+        let scroll_offset = self.output_scroll;
+        let text = if let Some(ref handle) = self.pty_handle {
+            crate::ui::terminal_widget::get_selected_text(&handle.parser, scroll_offset, start, end)
+        } else if let Some(ref func) = self.active_function {
+            if let Some(state) = self.command_history.get(func) {
+                crate::ui::terminal_widget::get_selected_text(
+                    &state.parser,
+                    scroll_offset,
+                    start,
+                    end,
+                )
+            } else {
+                String::new()
+            }
+        } else {
+            String::new()
+        };
+
+        if !text.is_empty() {
+            let _ = clipboard_anywhere::set_clipboard(&text);
+        }
+
+        // Exit visual mode after yanking
+        self.visual_mode = false;
+        self.selection_start = None;
+        self.selection_end = None;
     }
 
     pub fn toggle_info(&mut self) {
@@ -120,14 +322,18 @@ impl App {
     }
 
     pub fn scroll_output_up(&mut self) {
-        if self.output_scroll > 0 {
-            self.output_scroll -= 1;
+        // Scrolling "up" means showing earlier content = increasing scroll offset
+        let total = self.terminal_total_lines();
+        let max_scroll = total;
+        if self.output_scroll < max_scroll {
+            self.output_scroll += 1;
         }
     }
 
     pub fn scroll_output_down(&mut self) {
-        if self.output_scroll < self.output.len().saturating_sub(1) {
-            self.output_scroll += 1;
+        // Scrolling "down" means showing later content = decreasing scroll offset
+        if self.output_scroll > 0 {
+            self.output_scroll -= 1;
         }
     }
 
@@ -425,6 +631,9 @@ mod tests {
         assert!(!app.search_mode);
         assert_eq!(app.focus, FocusPane::ScriptList);
         assert_eq!(app.project_title, "Test");
+        assert!(app.pty_handle.is_none());
+        assert!(app.active_function.is_none());
+        assert!(!app.visual_mode);
     }
 
     #[test]
@@ -564,20 +773,20 @@ mod tests {
 
         assert_eq!(app.output_scroll, 0);
 
-        app.scroll_output_down();
+        app.scroll_output_up();
         assert_eq!(app.output_scroll, 1);
 
-        app.scroll_output_down();
+        app.scroll_output_up();
         assert_eq!(app.output_scroll, 2);
 
-        app.scroll_output_up();
+        app.scroll_output_down();
         assert_eq!(app.output_scroll, 1);
 
-        app.scroll_output_up();
+        app.scroll_output_down();
         assert_eq!(app.output_scroll, 0);
 
         // Should not go below 0
-        app.scroll_output_up();
+        app.scroll_output_down();
         assert_eq!(app.output_scroll, 0);
 
         app.reset_output_scroll();
@@ -756,5 +965,45 @@ mod tests {
         // Should show: Frequently Used + func1 + System + func1
         // (func1 appears in both Frequently Used and System)
         assert_eq!(items.len(), 4);
+    }
+
+    #[test]
+    fn test_app_execution_status_idle() {
+        let functions = create_test_functions();
+        let app = App::new(functions, "Test".to_string());
+        assert_eq!(app.current_execution_status(), ExecutionStatus::Idle);
+    }
+
+    #[test]
+    fn test_app_visual_mode() {
+        let functions = create_test_functions();
+        let mut app = App::new(functions, "Test".to_string());
+
+        assert!(!app.visual_mode);
+
+        app.toggle_visual_mode();
+        assert!(app.visual_mode);
+        assert!(app.selection_start.is_some());
+        assert!(app.selection_end.is_some());
+
+        app.toggle_visual_mode();
+        assert!(!app.visual_mode);
+        assert!(app.selection_start.is_none());
+        assert!(app.selection_end.is_none());
+    }
+
+    #[test]
+    fn test_app_focus_clears_visual_mode() {
+        let functions = create_test_functions();
+        let mut app = App::new(functions, "Test".to_string());
+
+        app.visual_mode = true;
+        app.selection_start = Some((0, 0));
+        app.selection_end = Some((1, 5));
+
+        // Focus is ScriptList -> Details (should clear visual mode since not Output)
+        app.toggle_focus();
+        assert!(!app.visual_mode);
+        assert!(app.selection_start.is_none());
     }
 }

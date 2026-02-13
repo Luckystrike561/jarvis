@@ -23,19 +23,21 @@
 //! - `render_search_bar` - Draws the search input when active
 //! - `render_script_tree` - Draws the categorized script list
 //! - `render_details` - Draws the selected script details
-//! - `render_output` - Draws execution output
+//! - `render_terminal_output` - Draws inline terminal output from PTY
 //! - `render_footer` - Draws the keyboard shortcuts
 //! - `render_info_modal` - Draws the info popup overlay
 //!
-//! ## Styling
+//! ## Border States
 //!
-//! The UI uses a consistent color scheme:
-//! - Cyan for headers and active elements
-//! - Yellow for categories and highlights
-//! - Green for success indicators
-//! - White/Gray for regular text
+//! The right panel border changes based on execution state:
+//! - **Idle**: Default/dim gray border
+//! - **Running**: Animated yellow/cyan border (spinning dots pattern)
+//! - **Success**: Green border
+//! - **Failure**: Red border
 
 use crate::ui::app::{App, FocusPane, TreeItem};
+use crate::ui::pty_runner::ExecutionStatus;
+use crate::ui::terminal_widget::TerminalView;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -44,7 +46,13 @@ use ratatui::{
     Frame,
 };
 
+/// Characters used for the spinning animation on the running border
+const SPINNER_CHARS: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
 pub fn render(frame: &mut Frame, app: &mut App) {
+    // Tick the animation
+    app.tick_animation();
+
     // Main layout: Header + (optional Search) + Body + Footer
     let main_constraints = if app.search_mode {
         vec![
@@ -88,14 +96,15 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     render_script_tree(frame, app, body_chunks[0]);
 
     // Split right side into details and output
-    if !app.output.is_empty() {
+    let has_terminal = app.has_terminal_output();
+    if has_terminal {
         let right_chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
             .split(body_chunks[1]);
 
         render_details(frame, app, right_chunks[0]);
-        render_output(frame, app, right_chunks[1]);
+        render_terminal_output(frame, app, right_chunks[1]);
     } else {
         render_details(frame, app, body_chunks[1]);
     }
@@ -315,55 +324,136 @@ fn render_details(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(paragraph, area);
 }
 
-fn render_output(frame: &mut Frame, app: &App, area: Rect) {
-    let border_color = if app.focus == FocusPane::Output {
-        Color::Cyan
-    } else {
-        Color::Gray
+/// Render the inline terminal output panel with PTY content
+fn render_terminal_output(frame: &mut Frame, app: &App, area: Rect) {
+    let status = app.current_execution_status();
+
+    // Determine border color based on execution status
+    let (border_color, border_modifier) = match status {
+        ExecutionStatus::Idle => (
+            if app.focus == FocusPane::Output {
+                Color::Cyan
+            } else {
+                Color::Gray
+            },
+            Modifier::empty(),
+        ),
+        ExecutionStatus::Running => {
+            // Animated border: alternate between colors
+            let colors = [Color::Yellow, Color::Cyan, Color::Yellow, Color::White];
+            let idx = (app.animation_tick as usize) % colors.len();
+            (colors[idx], Modifier::BOLD)
+        }
+        ExecutionStatus::Succeeded => (Color::Green, Modifier::BOLD),
+        ExecutionStatus::Failed => (Color::Red, Modifier::BOLD),
     };
 
-    // Calculate visible lines based on area height (subtract 2 for borders)
-    let visible_height = area.height.saturating_sub(2) as usize;
-
-    // Get the scrolled window of output lines
-    let total_lines = app.output.len();
-    let start_idx = app.output_scroll.min(total_lines.saturating_sub(1));
-    let end_idx = (start_idx + visible_height).min(total_lines);
-
-    let visible_output: Vec<Line> = app.output[start_idx..end_idx]
-        .iter()
-        .map(|line| Line::from(line.clone()))
-        .collect();
-
-    // Create title with scroll position indicator
-    let title = if total_lines > visible_height {
-        format!("💬 Output [{}/{}]", start_idx + 1, total_lines)
-    } else {
-        "💬 Output".to_string()
+    // Build title with status indicator
+    let title = match status {
+        ExecutionStatus::Idle => "💬 Output".to_string(),
+        ExecutionStatus::Running => {
+            let spinner = SPINNER_CHARS[(app.animation_tick as usize) % SPINNER_CHARS.len()];
+            let name = app
+                .pty_handle
+                .as_ref()
+                .map(|h| h.display_name.as_str())
+                .unwrap_or("Command");
+            format!("{} Running: {}", spinner, name)
+        }
+        ExecutionStatus::Succeeded => {
+            let name = app
+                .active_function
+                .as_ref()
+                .map(|f| f.display_name.as_str())
+                .unwrap_or("Command");
+            format!("✅ {}", name)
+        }
+        ExecutionStatus::Failed => {
+            let name = app
+                .active_function
+                .as_ref()
+                .map(|f| f.display_name.as_str())
+                .unwrap_or("Command");
+            let exit_code = if let Some(ref handle) = app.pty_handle {
+                handle.poll_exit_code()
+            } else if let Some(ref func) = app.active_function {
+                app.command_history.get(func).and_then(|s| s.exit_code)
+            } else {
+                None
+            };
+            if let Some(code) = exit_code {
+                format!("❌ {} (exit {})", name, code)
+            } else {
+                format!("❌ {}", name)
+            }
+        }
     };
 
-    let paragraph = Paragraph::new(visible_output)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(title)
-                .border_style(Style::default().fg(border_color)),
-        )
-        .wrap(Wrap { trim: true });
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(title)
+        .border_style(
+            Style::default()
+                .fg(border_color)
+                .add_modifier(border_modifier),
+        );
 
-    frame.render_widget(paragraph, area);
+    // Get the inner area (inside the border)
+    let inner_area = block.inner(area);
+
+    // Render the border block first
+    frame.render_widget(block, area);
+
+    // Now render the terminal content inside the border
+    // Try to get the vt100 parser from active PTY or command history
+    let parser_ref = if let Some(ref handle) = app.pty_handle {
+        Some(&handle.parser)
+    } else if let Some(ref func) = app.active_function {
+        app.command_history.get(func).map(|s| &s.parser)
+    } else {
+        None
+    };
+
+    if let Some(parser) = parser_ref {
+        let terminal_view = TerminalView::new(parser)
+            .scroll_offset(app.output_scroll)
+            .selection(app.visual_mode, app.selection_start, app.selection_end);
+        frame.render_widget(terminal_view, inner_area);
+    } else if !app.output.is_empty() {
+        // Fallback: render legacy plain-text output
+        let visible_height = inner_area.height as usize;
+        let total_lines = app.output.len();
+        let start_idx = app.output_scroll.min(total_lines.saturating_sub(1));
+        let end_idx = (start_idx + visible_height).min(total_lines);
+
+        let visible_output: Vec<Line> = app.output[start_idx..end_idx]
+            .iter()
+            .map(|line| Line::from(line.clone()))
+            .collect();
+
+        let paragraph = Paragraph::new(visible_output).wrap(Wrap { trim: true });
+        frame.render_widget(paragraph, inner_area);
+    }
 }
 
 fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
     let help_text = if app.search_mode {
         "[↑↓] Navigate  [Enter] Execute  [ESC] Exit Search  [Backspace] Delete"
+    } else if app.output_search_mode {
+        "[Enter] Confirm  [ESC] Cancel  [Backspace] Delete"
     } else {
         match app.focus {
             FocusPane::ScriptList => {
                 "[↑↓/jk] Navigate  [←→/hl] Collapse/Expand  [/] Search  [i] Info  [Enter] Toggle/Execute  [Tab] Switch  [Q] Quit"
             }
             FocusPane::Details => "[Tab] Switch Pane  [/] Search  [i] Info  [Q] Quit",
-            FocusPane::Output => "[↑↓/jk] Scroll  [Tab] Switch Pane  [i] Info  [Q] Quit",
+            FocusPane::Output => {
+                if app.visual_mode {
+                    "[jk] Move selection  [y] Yank  [v/Esc] Exit visual  [Ctrl+d/u] Half-page"
+                } else {
+                    "[jk] Scroll  [Ctrl+d/u] Half-page  [G] Bottom  [gg] Top  [v] Visual  [Esc/q] Back  [Tab] Switch"
+                }
+            }
         }
     };
 
