@@ -111,9 +111,10 @@ fn is_devbox_available() -> bool {
 ///   - "example" -> "Example"
 ///   - "example_file" -> "Example File"
 ///   - "example-file" -> "Example File"
+///   - "service.auth" -> "Service Auth"
 ///   - "🏠 homelab" -> "🏠 Homelab"
 pub fn format_display_name(name: &str) -> String {
-    name.replace(['_', '-'], " ")
+    name.replace(['_', '-', '.'], " ")
         .split_whitespace()
         .map(|word| {
             let mut chars = word.chars();
@@ -769,6 +770,11 @@ mod tests {
         assert_eq!(
             format_display_name("mixed_CASE-example"),
             "Mixed Case Example"
+        );
+        assert_eq!(format_display_name("service.auth"), "Service Auth");
+        assert_eq!(
+            format_display_name("service.api-gateway"),
+            "Service Api Gateway"
         );
     }
 

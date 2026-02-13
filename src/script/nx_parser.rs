@@ -38,6 +38,7 @@
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
+use std::thread;
 
 use anyhow::{Context, Result};
 use serde_json::Value;
@@ -99,7 +100,7 @@ pub fn is_nx_available() -> bool {
 ///
 /// Returns `("npx", vec!["nx"])` for local or `("nx", vec![])` for global.
 /// Caches the result to avoid repeated subprocess spawns.
-fn nx_command() -> (&'static str, Vec<&'static str>) {
+pub fn nx_command() -> (&'static str, Vec<&'static str>) {
     let use_npx = *NX_USE_NPX.get_or_init(|| {
         Command::new("npx")
             .args(["nx", "--version"])
@@ -122,7 +123,14 @@ fn nx_command() -> (&'static str, Vec<&'static str>) {
 ///
 /// The JSON output contains a `targets` object where each key is a target name
 /// and the value contains target configuration.
-fn parse_project_targets(output: &str, project: &str, category: &str) -> Result<Vec<NxTarget>> {
+///
+/// Each project gets its own category formatted as `nx:<workspace>/<project>`
+/// so projects appear as separate groups in the TUI.
+fn parse_project_targets(
+    output: &str,
+    project: &str,
+    workspace_name: &str,
+) -> Result<Vec<NxTarget>> {
     let project_info: Value =
         serde_json::from_str(output).context("Failed to parse nx project JSON")?;
 
@@ -133,6 +141,9 @@ fn parse_project_targets(output: &str, project: &str, category: &str) -> Result<
         None => return Ok(targets),
     };
 
+    // Each project gets its own category so targets are grouped per-project
+    let project_category = format!("nx:{}:{}", workspace_name, project);
+
     for (target_name, _target_config) in targets_obj {
         let qualified_name = format!("{}:{}", project, target_name);
         let display_name = format_display_name(target_name);
@@ -141,7 +152,7 @@ fn parse_project_targets(output: &str, project: &str, category: &str) -> Result<
         targets.push(NxTarget {
             name: qualified_name,
             display_name,
-            category: category.to_string(),
+            category: project_category.clone(),
             description,
             emoji: Some("\u{1f537}".to_string()), // 🔷
             ignored: false,
@@ -195,7 +206,7 @@ fn list_projects(workspace_dir: &Path) -> Result<Vec<String>> {
 fn get_project_targets(
     workspace_dir: &Path,
     project: &str,
-    category: &str,
+    workspace_name: &str,
 ) -> Result<Vec<NxTarget>> {
     let (cmd, mut base_args) = nx_command();
     base_args.extend(["show", "project", project, "--json"]);
@@ -225,13 +236,16 @@ fn get_project_targets(
         Err(e) => String::from_utf8_lossy(e.as_bytes()).to_string(),
     };
 
-    parse_project_targets(&output_str, project, category)
+    parse_project_targets(&output_str, project, workspace_name)
 }
 
 /// List all targets from all projects in an Nx workspace.
 ///
 /// Discovers projects via `nx show projects`, then queries each project
-/// for its targets via `nx show project <name> --json`.
+/// for its targets via `nx show project <name> --json` in parallel.
+///
+/// Each project gets its own category so the TUI groups targets per-project
+/// instead of showing a flat list of duplicated target names.
 pub fn list_targets(nx_json_path: &Path, category: &str) -> Result<Vec<NxTarget>> {
     let workspace_dir = nx_json_path.parent().with_context(|| {
         format!(
@@ -242,12 +256,31 @@ pub fn list_targets(nx_json_path: &Path, category: &str) -> Result<Vec<NxTarget>
 
     let projects = list_projects(workspace_dir)?;
 
+    // Query all projects in parallel using threads to avoid the N+1 latency problem.
+    // Each `nx show project <name> --json` call spawns a subprocess, so parallelism
+    // gives a significant speedup for large monorepos (e.g. 18 microservices).
+    let workspace_dir_owned = workspace_dir.to_path_buf();
+    let category_owned = category.to_string();
+
+    let handles: Vec<_> = projects
+        .into_iter()
+        .map(|project| {
+            let ws_dir = workspace_dir_owned.clone();
+            let ws_name = category_owned.clone();
+            thread::spawn(move || get_project_targets(&ws_dir, &project, &ws_name))
+        })
+        .collect();
+
     let mut all_targets = Vec::new();
-    for project in &projects {
-        match get_project_targets(workspace_dir, project, category) {
-            Ok(targets) => all_targets.extend(targets),
-            Err(_) => {
+    for handle in handles {
+        match handle.join() {
+            Ok(Ok(targets)) => all_targets.extend(targets),
+            Ok(Err(_)) => {
                 // Skip projects that fail to parse
+                continue;
+            }
+            Err(_) => {
+                // Skip projects whose thread panicked
                 continue;
             }
         }
@@ -260,6 +293,22 @@ pub fn list_targets(nx_json_path: &Path, category: &str) -> Result<Vec<NxTarget>
             .then_with(|| a.target.cmp(&b.target))
     });
     Ok(all_targets)
+}
+
+/// Collect per-project category display names from a list of Nx targets.
+///
+/// Returns a map from category key (e.g. `"nx:monopoly:service.auth"`)
+/// to display name (e.g. `"🔷 Service Auth"`).
+pub fn collect_category_display_names(
+    targets: &[NxTarget],
+) -> std::collections::HashMap<String, String> {
+    let mut names = std::collections::HashMap::new();
+    for target in targets {
+        names
+            .entry(target.category.clone())
+            .or_insert_with(|| format!("🔷 {}", format_display_name(&target.project)));
+    }
+    names
 }
 
 #[cfg(test)]
@@ -354,7 +403,7 @@ mod tests {
         let targets = parse_project_targets(&json, "my-app", "my-workspace").unwrap();
 
         for target in &targets {
-            assert_eq!(target.category, "my-workspace");
+            assert_eq!(target.category, "nx:my-workspace:my-app");
         }
     }
 
@@ -453,10 +502,26 @@ mod tests {
         // Verify distinct project fields
         for t in &app_targets {
             assert_eq!(t.project, "app");
+            assert_eq!(t.category, "nx:ws:app");
         }
         for t in &lib_targets {
             assert_eq!(t.project, "lib");
+            assert_eq!(t.category, "nx:ws:lib");
         }
+    }
+
+    #[test]
+    fn test_parse_project_targets_per_project_categories() {
+        let json_app = r#"{"name": "app", "targets": {"build": {}, "test": {}, "lint": {}}}"#;
+        let json_lib = r#"{"name": "lib", "targets": {"build": {}, "test": {}, "lint": {}}}"#;
+
+        let app_targets = parse_project_targets(json_app, "app", "monopoly").unwrap();
+        let lib_targets = parse_project_targets(json_lib, "lib", "monopoly").unwrap();
+
+        // Even though both have the same target names, they should have different categories
+        assert_ne!(app_targets[0].category, lib_targets[0].category);
+        assert_eq!(app_targets[0].category, "nx:monopoly:app");
+        assert_eq!(lib_targets[0].category, "nx:monopoly:lib");
     }
 
     #[test]
@@ -467,5 +532,24 @@ mod tests {
         for target in &targets {
             assert!(!target.ignored);
         }
+    }
+
+    #[test]
+    fn test_collect_category_display_names() {
+        let json_app = r#"{"name": "app", "targets": {"build": {}}}"#;
+        let json_lib = r#"{"name": "lib", "targets": {"test": {}}}"#;
+
+        let mut all_targets = parse_project_targets(json_app, "service.auth", "monopoly").unwrap();
+        all_targets.extend(parse_project_targets(json_lib, "service.api", "monopoly").unwrap());
+
+        let names = collect_category_display_names(&all_targets);
+        assert_eq!(
+            names.get("nx:monopoly:service.auth"),
+            Some(&"🔷 Service Auth".to_string())
+        );
+        assert_eq!(
+            names.get("nx:monopoly:service.api"),
+            Some(&"🔷 Service Api".to_string())
+        );
     }
 }

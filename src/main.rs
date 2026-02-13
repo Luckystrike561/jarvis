@@ -217,6 +217,7 @@ async fn run_application(args: Args) -> Result<()> {
     // Parse all scripts
     let mut all_functions = Vec::new();
     let mut parse_errors = Vec::new();
+    let mut nx_category_display_names = std::collections::HashMap::new();
 
     for script_file in &script_files {
         match &script_file.script_type {
@@ -385,6 +386,11 @@ async fn run_application(args: Args) -> Result<()> {
             script::ScriptType::NxJson => {
                 match script::list_nx_targets(&script_file.path, &script_file.category) {
                     Ok(nx_targets) => {
+                        // Collect per-project category display names before converting
+                        let nx_display_names =
+                            script::nx_parser::collect_category_display_names(&nx_targets);
+                        nx_category_display_names.extend(nx_display_names);
+
                         let functions: Vec<script::ScriptFunction> = nx_targets
                             .into_iter()
                             .filter(|t| !t.ignored)
@@ -471,6 +477,8 @@ async fn run_application(args: Args) -> Result<()> {
             script_file.display_name.clone(),
         );
     }
+    // Add per-project Nx category display names (one per Nx project)
+    category_display_names.extend(nx_category_display_names);
     app.set_category_display_names(category_display_names);
 
     // Initialize usage tracking (gracefully handle errors)
@@ -775,11 +783,22 @@ async fn execute_selected_function(
         func.category.clone()
     };
 
-    // Find the script file matching both category and script type
-    if let Some(script_file) = script_files
-        .iter()
-        .find(|s| s.category == original_category && s.script_type == func.script_type)
-    {
+    // Find the script file matching both category and script type.
+    // For Nx targets, categories are per-project (e.g. "nx:monopoly:service.auth")
+    // while the ScriptFile has the workspace category (e.g. "monopoly"), so we match
+    // by checking if the Nx category starts with "nx:<script_file_category>:".
+    if let Some(script_file) = script_files.iter().find(|s| {
+        if s.script_type != func.script_type {
+            return false;
+        }
+        if s.script_type == script::ScriptType::NxJson {
+            // Match Nx per-project categories against the workspace-level ScriptFile
+            let prefix = format!("nx:{}:", s.category);
+            original_category.starts_with(&prefix)
+        } else {
+            s.category == original_category
+        }
+    }) {
         // Suspend TUI for interactive execution
         suspend_tui(terminal)?;
 
