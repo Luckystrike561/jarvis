@@ -49,7 +49,7 @@ pub use cargo_parser::list_targets as list_cargo_targets;
 pub use devbox_parser::parse_devbox_json;
 pub use discovery::{
     discover_scripts, discover_scripts_shallow, discover_single_file, format_display_name,
-    ScriptFile, ScriptType,
+    prewarm_tool_checks, ScriptFile, ScriptType,
 };
 pub use executor::{
     execute_cargo_target_interactive, execute_devbox_script_interactive,
