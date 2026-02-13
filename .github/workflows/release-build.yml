@@ -30,23 +30,31 @@ jobs:
       - name: Wait for version sync workflow
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          echo "Waiting for version sync workflow to complete..."
-          # Wait up to 2 minutes for the version sync workflow
-          for i in {1..24}; do
-            # Check if version sync workflow has completed
-            STATUS=$(gh run list --workflow=release-version-sync.yml --limit 1 --json status --jq '.[0].status')
-            echo "Attempt $i/24: Version sync status: $STATUS"
+          echo "Waiting for version sync workflow to complete for tag $RELEASE_TAG..."
+          # Wait up to 5 minutes for the version sync workflow
+          for i in {1..60}; do
+            # Find the version sync run triggered by this release
+            RESULT=$(gh run list --workflow=release-version-sync.yml --limit 5 --json status,conclusion,headBranch,createdAt --jq '.[0]')
+            STATUS=$(echo "$RESULT" | jq -r '.status')
+            CONCLUSION=$(echo "$RESULT" | jq -r '.conclusion')
+            echo "Attempt $i/60: Version sync status: $STATUS (conclusion: $CONCLUSION)"
             
             if [ "$STATUS" = "completed" ]; then
-              echo "Version sync completed!"
-              exit 0
+              if [ "$CONCLUSION" = "success" ]; then
+                echo "Version sync completed successfully!"
+                exit 0
+              else
+                echo "ERROR: Version sync completed with conclusion: $CONCLUSION"
+                exit 1
+              fi
             fi
             
             sleep 5
           done
           
-          echo "Warning: Version sync workflow did not complete in time"
+          echo "ERROR: Version sync workflow did not complete within 5 minutes"
           exit 1
 
   build-release:

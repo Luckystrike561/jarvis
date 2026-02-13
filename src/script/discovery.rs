@@ -103,6 +103,19 @@ fn is_devbox_available() -> bool {
     })
 }
 
+/// Pre-warm all tool availability checks in parallel.
+///
+/// This spawns threads to check each tool concurrently, so by the time
+/// discovery needs the results, they're already cached in the OnceLock statics.
+pub fn prewarm_tool_checks() {
+    std::thread::spawn(is_devbox_available);
+    std::thread::spawn(crate::script::task_parser::is_task_available);
+    std::thread::spawn(crate::script::makefile_parser::is_make_available);
+    std::thread::spawn(crate::script::just_parser::is_just_available);
+    std::thread::spawn(crate::script::cargo_parser::is_cargo_available);
+    std::thread::spawn(crate::script::nx_parser::is_nx_available);
+}
+
 /// Formats a filename into a display-friendly name
 /// - Replaces underscores and hyphens with spaces
 /// - Capitalizes the first letter of each word
@@ -111,9 +124,10 @@ fn is_devbox_available() -> bool {
 ///   - "example" -> "Example"
 ///   - "example_file" -> "Example File"
 ///   - "example-file" -> "Example File"
+///   - "service.auth" -> "Service Auth"
 ///   - "🏠 homelab" -> "🏠 Homelab"
 pub fn format_display_name(name: &str) -> String {
-    name.replace(['_', '-'], " ")
+    name.replace(['_', '-', '.'], " ")
         .split_whitespace()
         .map(|word| {
             let mut chars = word.chars();
@@ -769,6 +783,11 @@ mod tests {
         assert_eq!(
             format_display_name("mixed_CASE-example"),
             "Mixed Case Example"
+        );
+        assert_eq!(format_display_name("service.auth"), "Service Auth");
+        assert_eq!(
+            format_display_name("service.api-gateway"),
+            "Service Api Gateway"
         );
     }
 

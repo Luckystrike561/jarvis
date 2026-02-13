@@ -126,6 +126,10 @@ async fn main() -> Result<()> {
 }
 
 async fn run_application(args: Args) -> Result<()> {
+    // Pre-warm tool availability checks in parallel (devbox, task, make, just, cargo, nx)
+    // These run in background threads so they're ready by the time discovery needs them
+    script::prewarm_tool_checks();
+
     // Determine script files based on mode: single file or directory discovery
     let (script_files, current_dir) = if let Some(file_path) = args.file {
         // Single file mode: discover only from the specified file
@@ -214,196 +218,207 @@ async fn run_application(args: Args) -> Result<()> {
         println!("\n=== Parsed Functions ===");
     }
 
-    // Parse all scripts
-    let mut all_functions = Vec::new();
-    let mut parse_errors = Vec::new();
+    // Parse all scripts in parallel using threads for subprocess-heavy parsers
+    enum ParseResult {
+        Functions(Vec<script::ScriptFunction>),
+        NxFunctions(
+            Vec<script::ScriptFunction>,
+            std::collections::HashMap<String, String>,
+        ),
+        Error(String, anyhow::Error),
+    }
 
-    for script_file in &script_files {
-        match &script_file.script_type {
-            script::ScriptType::Bash => {
-                match script::parse_script(&script_file.path, &script_file.category) {
+    let parse_handles: Vec<std::thread::JoinHandle<ParseResult>> = script_files
+        .iter()
+        .map(|script_file| {
+            let path = script_file.path.clone();
+            let category = script_file.category.clone();
+            let script_type = script_file.script_type;
+
+            std::thread::spawn(move || match script_type {
+                script::ScriptType::Bash => match script::parse_script(&path, &category) {
                     Ok(functions) => {
-                        // Filter out ignored functions
-                        let visible_functions: Vec<_> =
+                        let visible: Vec<_> =
                             functions.into_iter().filter(|f| !f.ignored).collect();
-                        all_functions.extend(visible_functions);
+                        ParseResult::Functions(visible)
                     }
-                    Err(e) => {
-                        parse_errors.push((script_file.path.display().to_string(), e));
-                    }
-                }
-            }
-            script::ScriptType::PackageJson => {
-                match script::parse_package_json(&script_file.path, &script_file.category) {
-                    Ok(npm_scripts) => {
-                        // Convert NpmScript to ScriptFunction for TUI
-                        let functions: Vec<script::ScriptFunction> = npm_scripts
-                            .into_iter()
-                            .map(|npm_script| script::ScriptFunction {
-                                name: npm_script.name,
-                                display_name: npm_script.display_name,
-                                category: npm_script.category,
-                                description: npm_script.description,
-                                emoji: None, // npm scripts don't have emoji support yet
-                                ignored: false, // npm scripts are never ignored
-                                script_type: script::ScriptType::PackageJson,
-                            })
-                            .collect();
-                        all_functions.extend(functions);
-                    }
-                    Err(e) => {
-                        parse_errors.push((script_file.path.display().to_string(), e));
+                    Err(e) => ParseResult::Error(path.display().to_string(), e),
+                },
+                script::ScriptType::PackageJson => {
+                    match script::parse_package_json(&path, &category) {
+                        Ok(npm_scripts) => {
+                            let functions: Vec<script::ScriptFunction> = npm_scripts
+                                .into_iter()
+                                .map(|s| script::ScriptFunction {
+                                    name: s.name,
+                                    display_name: s.display_name,
+                                    category: s.category,
+                                    description: s.description,
+                                    emoji: None,
+                                    ignored: false,
+                                    script_type: script::ScriptType::PackageJson,
+                                })
+                                .collect();
+                            ParseResult::Functions(functions)
+                        }
+                        Err(e) => ParseResult::Error(path.display().to_string(), e),
                     }
                 }
-            }
-            script::ScriptType::DevboxJson => {
-                match script::parse_devbox_json(&script_file.path, &script_file.category) {
-                    Ok(devbox_scripts) => {
-                        // Convert DevboxScript to ScriptFunction for TUI
-                        let functions: Vec<script::ScriptFunction> = devbox_scripts
-                            .into_iter()
-                            .map(|devbox_script| script::ScriptFunction {
-                                name: devbox_script.name,
-                                display_name: devbox_script.display_name,
-                                category: devbox_script.category,
-                                description: devbox_script.description,
-                                emoji: None, // devbox scripts don't have emoji support yet
-                                ignored: false, // devbox scripts are never ignored
-                                script_type: script::ScriptType::DevboxJson,
-                            })
-                            .collect();
-                        all_functions.extend(functions);
-                    }
-                    Err(e) => {
-                        parse_errors.push((script_file.path.display().to_string(), e));
+                script::ScriptType::DevboxJson => {
+                    match script::parse_devbox_json(&path, &category) {
+                        Ok(devbox_scripts) => {
+                            let functions: Vec<script::ScriptFunction> = devbox_scripts
+                                .into_iter()
+                                .map(|s| script::ScriptFunction {
+                                    name: s.name,
+                                    display_name: s.display_name,
+                                    category: s.category,
+                                    description: s.description,
+                                    emoji: None,
+                                    ignored: false,
+                                    script_type: script::ScriptType::DevboxJson,
+                                })
+                                .collect();
+                            ParseResult::Functions(functions)
+                        }
+                        Err(e) => ParseResult::Error(path.display().to_string(), e),
                     }
                 }
-            }
-            script::ScriptType::Task => {
-                match script::list_tasks(&script_file.path, &script_file.category) {
-                    Ok(task_tasks) => {
-                        let functions: Vec<script::ScriptFunction> = task_tasks
+                script::ScriptType::Task => match script::list_tasks(&path, &category) {
+                    Ok(tasks) => {
+                        let functions: Vec<script::ScriptFunction> = tasks
                             .into_iter()
-                            .filter(|t| !t.ignored) // Filter out ignored tasks
-                            .map(|task_task| script::ScriptFunction {
-                                name: task_task.name,
-                                display_name: task_task.display_name,
-                                category: task_task.category,
-                                description: task_task.description,
-                                emoji: task_task.emoji,
-                                ignored: task_task.ignored,
+                            .filter(|t| !t.ignored)
+                            .map(|t| script::ScriptFunction {
+                                name: t.name,
+                                display_name: t.display_name,
+                                category: t.category,
+                                description: t.description,
+                                emoji: t.emoji,
+                                ignored: t.ignored,
                                 script_type: script::ScriptType::Task,
                             })
                             .collect();
-                        all_functions.extend(functions);
+                        ParseResult::Functions(functions)
                     }
-                    Err(e) => {
-                        parse_errors.push((script_file.path.display().to_string(), e));
-                    }
-                }
-            }
-            script::ScriptType::Makefile => {
-                match script::list_make_targets(&script_file.path, &script_file.category) {
-                    Ok(make_targets) => {
-                        let functions: Vec<script::ScriptFunction> = make_targets
+                    Err(e) => ParseResult::Error(path.display().to_string(), e),
+                },
+                script::ScriptType::Makefile => match script::list_make_targets(&path, &category) {
+                    Ok(targets) => {
+                        let functions: Vec<script::ScriptFunction> = targets
                             .into_iter()
-                            .filter(|t| !t.ignored) // Filter out ignored targets
-                            .map(|make_target| script::ScriptFunction {
-                                name: make_target.name,
-                                display_name: make_target.display_name,
-                                category: make_target.category,
-                                description: make_target.description,
-                                emoji: make_target.emoji,
-                                ignored: make_target.ignored,
+                            .filter(|t| !t.ignored)
+                            .map(|t| script::ScriptFunction {
+                                name: t.name,
+                                display_name: t.display_name,
+                                category: t.category,
+                                description: t.description,
+                                emoji: t.emoji,
+                                ignored: t.ignored,
                                 script_type: script::ScriptType::Makefile,
                             })
                             .collect();
-                        all_functions.extend(functions);
+                        ParseResult::Functions(functions)
                     }
-                    Err(e) => {
-                        parse_errors.push((script_file.path.display().to_string(), e));
-                    }
-                }
-            }
-            script::ScriptType::Just => {
-                match script::list_just_recipes(&script_file.path, &script_file.category) {
-                    Ok(just_recipes) => {
-                        let functions: Vec<script::ScriptFunction> = just_recipes
+                    Err(e) => ParseResult::Error(path.display().to_string(), e),
+                },
+                script::ScriptType::Just => match script::list_just_recipes(&path, &category) {
+                    Ok(recipes) => {
+                        let functions: Vec<script::ScriptFunction> = recipes
                             .into_iter()
-                            .filter(|r| !r.ignored) // Filter out ignored recipes
-                            .map(|just_recipe| script::ScriptFunction {
-                                name: just_recipe.name,
-                                display_name: just_recipe.display_name,
-                                category: just_recipe.category,
-                                description: just_recipe.description,
-                                emoji: just_recipe.emoji,
-                                ignored: just_recipe.ignored,
+                            .filter(|r| !r.ignored)
+                            .map(|r| script::ScriptFunction {
+                                name: r.name,
+                                display_name: r.display_name,
+                                category: r.category,
+                                description: r.description,
+                                emoji: r.emoji,
+                                ignored: r.ignored,
                                 script_type: script::ScriptType::Just,
                             })
                             .collect();
-                        all_functions.extend(functions);
+                        ParseResult::Functions(functions)
                     }
-                    Err(e) => {
-                        parse_errors.push((script_file.path.display().to_string(), e));
+                    Err(e) => ParseResult::Error(path.display().to_string(), e),
+                },
+                script::ScriptType::CargoToml => {
+                    match script::list_cargo_targets(&path, &category) {
+                        Ok(targets) => {
+                            let functions: Vec<script::ScriptFunction> = targets
+                                .into_iter()
+                                .filter(|t| !t.ignored)
+                                .map(|t| {
+                                    let prefixed_name = match t.target_type {
+                                        script::cargo_parser::CargoTargetType::Binary => {
+                                            format!("bin:{}", t.name)
+                                        }
+                                        script::cargo_parser::CargoTargetType::Example => {
+                                            format!("example:{}", t.name)
+                                        }
+                                    };
+                                    script::ScriptFunction {
+                                        name: prefixed_name,
+                                        display_name: t.display_name,
+                                        category: t.category,
+                                        description: t.description,
+                                        emoji: t.emoji,
+                                        ignored: t.ignored,
+                                        script_type: script::ScriptType::CargoToml,
+                                    }
+                                })
+                                .collect();
+                            ParseResult::Functions(functions)
+                        }
+                        Err(e) => ParseResult::Error(path.display().to_string(), e),
                     }
                 }
-            }
-            script::ScriptType::CargoToml => {
-                match script::list_cargo_targets(&script_file.path, &script_file.category) {
-                    Ok(cargo_targets) => {
-                        let functions: Vec<script::ScriptFunction> = cargo_targets
-                            .into_iter()
-                            .filter(|t| !t.ignored)
-                            .map(|cargo_target| {
-                                // Prefix name with target type for executor dispatch
-                                let prefixed_name = match cargo_target.target_type {
-                                    script::cargo_parser::CargoTargetType::Binary => {
-                                        format!("bin:{}", cargo_target.name)
-                                    }
-                                    script::cargo_parser::CargoTargetType::Example => {
-                                        format!("example:{}", cargo_target.name)
-                                    }
-                                };
-                                script::ScriptFunction {
-                                    name: prefixed_name,
-                                    display_name: cargo_target.display_name,
-                                    category: cargo_target.category,
-                                    description: cargo_target.description,
-                                    emoji: cargo_target.emoji,
-                                    ignored: cargo_target.ignored,
-                                    script_type: script::ScriptType::CargoToml,
-                                }
-                            })
-                            .collect();
-                        all_functions.extend(functions);
-                    }
-                    Err(e) => {
-                        parse_errors.push((script_file.path.display().to_string(), e));
-                    }
-                }
-            }
-            script::ScriptType::NxJson => {
-                match script::list_nx_targets(&script_file.path, &script_file.category) {
+                script::ScriptType::NxJson => match script::list_nx_targets(&path, &category) {
                     Ok(nx_targets) => {
+                        let display_names =
+                            script::nx_parser::collect_category_display_names(&nx_targets);
                         let functions: Vec<script::ScriptFunction> = nx_targets
                             .into_iter()
                             .filter(|t| !t.ignored)
-                            .map(|nx_target| script::ScriptFunction {
-                                name: nx_target.name,
-                                display_name: nx_target.display_name,
-                                category: nx_target.category,
-                                description: nx_target.description,
-                                emoji: nx_target.emoji,
-                                ignored: nx_target.ignored,
+                            .map(|t| script::ScriptFunction {
+                                name: t.name,
+                                display_name: t.display_name,
+                                category: t.category,
+                                description: t.description,
+                                emoji: t.emoji,
+                                ignored: t.ignored,
                                 script_type: script::ScriptType::NxJson,
                             })
                             .collect();
-                        all_functions.extend(functions);
+                        ParseResult::NxFunctions(functions, display_names)
                     }
-                    Err(e) => {
-                        parse_errors.push((script_file.path.display().to_string(), e));
-                    }
-                }
+                    Err(e) => ParseResult::Error(path.display().to_string(), e),
+                },
+            })
+        })
+        .collect();
+
+    // Collect results from all threads
+    let mut all_functions = Vec::new();
+    let mut parse_errors = Vec::new();
+    let mut nx_category_display_names = std::collections::HashMap::new();
+
+    for handle in parse_handles {
+        match handle.join() {
+            Ok(ParseResult::Functions(functions)) => {
+                all_functions.extend(functions);
+            }
+            Ok(ParseResult::NxFunctions(functions, display_names)) => {
+                all_functions.extend(functions);
+                nx_category_display_names.extend(display_names);
+            }
+            Ok(ParseResult::Error(path, err)) => {
+                parse_errors.push((path, err));
+            }
+            Err(_) => {
+                parse_errors.push((
+                    "unknown".to_string(),
+                    anyhow::anyhow!("Script parsing thread panicked"),
+                ));
             }
         }
     }
@@ -471,6 +486,8 @@ async fn run_application(args: Args) -> Result<()> {
             script_file.display_name.clone(),
         );
     }
+    // Add per-project Nx category display names (one per Nx project)
+    category_display_names.extend(nx_category_display_names);
     app.set_category_display_names(category_display_names);
 
     // Initialize usage tracking (gracefully handle errors)
@@ -775,11 +792,22 @@ async fn execute_selected_function(
         func.category.clone()
     };
 
-    // Find the script file matching both category and script type
-    if let Some(script_file) = script_files
-        .iter()
-        .find(|s| s.category == original_category && s.script_type == func.script_type)
-    {
+    // Find the script file matching both category and script type.
+    // For Nx targets, categories are per-project (e.g. "nx:monopoly:service.auth")
+    // while the ScriptFile has the workspace category (e.g. "monopoly"), so we match
+    // by checking if the Nx category starts with "nx:<script_file_category>:".
+    if let Some(script_file) = script_files.iter().find(|s| {
+        if s.script_type != func.script_type {
+            return false;
+        }
+        if s.script_type == script::ScriptType::NxJson {
+            // Match Nx per-project categories against the workspace-level ScriptFile
+            let prefix = format!("nx:{}:", s.category);
+            original_category.starts_with(&prefix)
+        } else {
+            s.category == original_category
+        }
+    }) {
         // Suspend TUI for interactive execution
         suspend_tui(terminal)?;
 

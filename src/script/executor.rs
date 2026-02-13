@@ -389,6 +389,7 @@ pub fn execute_cargo_target_interactive(manifest_path: &Path, target_name: &str)
 /// which is passed directly to `nx run`.
 ///
 /// Uses `npx nx` if available locally, otherwise falls back to global `nx`.
+/// Reuses the cached availability check from the parser to avoid redundant subprocess spawns.
 pub fn execute_nx_target_interactive(nx_json_path: &Path, target_name: &str) -> Result<i32> {
     if !nx_json_path.exists() {
         anyhow::bail!("nx.json not found: {}", nx_json_path.display());
@@ -409,48 +410,26 @@ pub fn execute_nx_target_interactive(nx_json_path: &Path, target_name: &str) -> 
         )
     })?;
 
-    // Determine whether to use npx nx or nx
-    // stdin must be null to prevent npx from prompting to install nx
-    let npx_available = Command::new("npx")
-        .args(["nx", "--version"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false);
+    // Reuse cached nx command detection from the parser
+    let (cmd, base_args) = crate::script::nx_parser::nx_command();
 
-    let status = if npx_available {
-        Command::new("npx")
-            .args(["nx", "run", target_name])
-            .current_dir(dir)
-            .stdin(Stdio::inherit())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .status()
-            .with_context(|| {
-                format!(
-                    "Failed to execute nx target '{}' from {}",
-                    target_name,
-                    nx_json_path.display()
-                )
-            })?
-    } else {
-        Command::new("nx")
-            .args(["run", target_name])
-            .current_dir(dir)
-            .stdin(Stdio::inherit())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .status()
-            .with_context(|| {
-                format!(
-                    "Failed to execute nx target '{}' from {}",
-                    target_name,
-                    nx_json_path.display()
-                )
-            })?
-    };
+    let mut args = base_args;
+    args.extend(["run", target_name]);
+
+    let status = Command::new(cmd)
+        .args(&args)
+        .current_dir(dir)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .with_context(|| {
+            format!(
+                "Failed to execute nx target '{}' from {}",
+                target_name,
+                nx_json_path.display()
+            )
+        })?;
 
     Ok(status.code().unwrap_or(1))
 }

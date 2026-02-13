@@ -1,0 +1,113 @@
+name: Bump Version
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'New version (e.g., 0.1.13). Leave empty to auto-detect from release drafter.'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  bump-version:
+    name: Bump version in Cargo.toml, Cargo.lock, flake.nix, and Homebrew formula
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Determine version
+        id: determine_version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ -n "$INPUT_VERSION" ]; then
+            VERSION="$INPUT_VERSION"
+          else
+            # Auto-detect from the latest draft release created by release-drafter
+            VERSION=$(gh release list --json tagName,isDraft --jq '.[] | select(.isDraft) | .tagName' | head -1)
+            if [ -z "$VERSION" ]; then
+              echo "ERROR: No draft release found and no version provided"
+              exit 1
+            fi
+            VERSION="${VERSION#v}"
+          fi
+
+          # Validate version format (semver)
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+            echo "ERROR: Invalid version format: $VERSION"
+            exit 1
+          fi
+
+          # Check if version is already current
+          CURRENT=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          if [ "$CURRENT" = "$VERSION" ]; then
+            echo "Version is already $VERSION - nothing to do"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Determined version: $VERSION (current: $CURRENT)"
+
+      - name: Install Rust toolchain
+        if: steps.determine_version.outputs.skip != 'true'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Update Cargo.toml version
+        if: steps.determine_version.outputs.skip != 'true'
+        env:
+          VERSION: ${{ steps.determine_version.outputs.version }}
+        run: |
+          sed -i "s/^version = .*/version = \"$VERSION\"/" Cargo.toml
+          echo "Updated Cargo.toml to version $VERSION"
+
+      - name: Update Cargo.lock
+        if: steps.determine_version.outputs.skip != 'true'
+        run: |
+          cargo update --workspace
+          echo "Updated Cargo.lock"
+
+      - name: Update flake.nix version
+        if: steps.determine_version.outputs.skip != 'true'
+        env:
+          VERSION: ${{ steps.determine_version.outputs.version }}
+        run: |
+          sed -i "s/version = \"[0-9]*\.[0-9]*\.[0-9]*\"/version = \"$VERSION\"/" flake.nix
+          echo "Updated flake.nix to version $VERSION"
+
+      - name: Verify changes
+        if: steps.determine_version.outputs.skip != 'true'
+        run: |
+          echo "=== Cargo.toml ==="
+          grep "^version" Cargo.toml
+          echo ""
+          echo "=== Cargo.lock ==="
+          grep -A1 'name = "jarvis-tui"' Cargo.lock
+          echo ""
+          echo "=== flake.nix ==="
+          grep "version = " flake.nix
+
+      - name: Commit and push changes
+        if: steps.determine_version.outputs.skip != 'true'
+        env:
+          VERSION: ${{ steps.determine_version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml Cargo.lock flake.nix
+          if git diff --staged --quiet; then
+            echo "No changes to commit - version already up to date"
+          else
+            git commit -m "chore: bump version to $VERSION"
+            git push origin main
+            echo "Version successfully bumped to $VERSION and pushed to main"
+          fi
