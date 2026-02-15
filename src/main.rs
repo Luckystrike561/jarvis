@@ -733,6 +733,123 @@ mod tests {
             err_msg.contains("Unsupported file type") || err_msg.contains("Failed to parse file")
         );
     }
+
+    // --- key_event_to_bytes tests ---
+
+    #[test]
+    fn test_key_event_to_bytes_regular_char() {
+        let ke = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::empty());
+        assert_eq!(key_event_to_bytes(&ke), vec![b'a']);
+    }
+
+    #[test]
+    fn test_key_event_to_bytes_uppercase_char() {
+        let ke = KeyEvent::new(KeyCode::Char('A'), KeyModifiers::SHIFT);
+        assert_eq!(key_event_to_bytes(&ke), vec![b'A']);
+    }
+
+    #[test]
+    fn test_key_event_to_bytes_ctrl_c() {
+        let ke = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+        assert_eq!(key_event_to_bytes(&ke), vec![0x03]); // ETX
+    }
+
+    #[test]
+    fn test_key_event_to_bytes_ctrl_a() {
+        let ke = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL);
+        assert_eq!(key_event_to_bytes(&ke), vec![0x01]); // SOH
+    }
+
+    #[test]
+    fn test_key_event_to_bytes_ctrl_z() {
+        let ke = KeyEvent::new(KeyCode::Char('z'), KeyModifiers::CONTROL);
+        assert_eq!(key_event_to_bytes(&ke), vec![0x1A]); // SUB
+    }
+
+    #[test]
+    fn test_key_event_to_bytes_enter() {
+        let ke = KeyEvent::new(KeyCode::Enter, KeyModifiers::empty());
+        assert_eq!(key_event_to_bytes(&ke), vec![b'\r']);
+    }
+
+    #[test]
+    fn test_key_event_to_bytes_backspace() {
+        let ke = KeyEvent::new(KeyCode::Backspace, KeyModifiers::empty());
+        assert_eq!(key_event_to_bytes(&ke), vec![0x7f]);
+    }
+
+    #[test]
+    fn test_key_event_to_bytes_escape() {
+        let ke = KeyEvent::new(KeyCode::Esc, KeyModifiers::empty());
+        assert_eq!(key_event_to_bytes(&ke), vec![0x1b]);
+    }
+
+    #[test]
+    fn test_key_event_to_bytes_tab() {
+        let ke = KeyEvent::new(KeyCode::Tab, KeyModifiers::empty());
+        assert_eq!(key_event_to_bytes(&ke), vec![b'\t']);
+    }
+
+    #[test]
+    fn test_key_event_to_bytes_arrow_keys() {
+        let up = KeyEvent::new(KeyCode::Up, KeyModifiers::empty());
+        assert_eq!(key_event_to_bytes(&up), b"\x1b[A".to_vec());
+
+        let down = KeyEvent::new(KeyCode::Down, KeyModifiers::empty());
+        assert_eq!(key_event_to_bytes(&down), b"\x1b[B".to_vec());
+
+        let right = KeyEvent::new(KeyCode::Right, KeyModifiers::empty());
+        assert_eq!(key_event_to_bytes(&right), b"\x1b[C".to_vec());
+
+        let left = KeyEvent::new(KeyCode::Left, KeyModifiers::empty());
+        assert_eq!(key_event_to_bytes(&left), b"\x1b[D".to_vec());
+    }
+
+    #[test]
+    fn test_key_event_to_bytes_function_keys() {
+        let f1 = KeyEvent::new(KeyCode::F(1), KeyModifiers::empty());
+        assert_eq!(key_event_to_bytes(&f1), b"\x1bOP".to_vec());
+
+        let f5 = KeyEvent::new(KeyCode::F(5), KeyModifiers::empty());
+        assert_eq!(key_event_to_bytes(&f5), b"\x1b[15~".to_vec());
+
+        let f12 = KeyEvent::new(KeyCode::F(12), KeyModifiers::empty());
+        assert_eq!(key_event_to_bytes(&f12), b"\x1b[24~".to_vec());
+    }
+
+    #[test]
+    fn test_key_event_to_bytes_special_keys() {
+        let home = KeyEvent::new(KeyCode::Home, KeyModifiers::empty());
+        assert_eq!(key_event_to_bytes(&home), b"\x1b[H".to_vec());
+
+        let end = KeyEvent::new(KeyCode::End, KeyModifiers::empty());
+        assert_eq!(key_event_to_bytes(&end), b"\x1b[F".to_vec());
+
+        let del = KeyEvent::new(KeyCode::Delete, KeyModifiers::empty());
+        assert_eq!(key_event_to_bytes(&del), b"\x1b[3~".to_vec());
+
+        let insert = KeyEvent::new(KeyCode::Insert, KeyModifiers::empty());
+        assert_eq!(key_event_to_bytes(&insert), b"\x1b[2~".to_vec());
+
+        let pgup = KeyEvent::new(KeyCode::PageUp, KeyModifiers::empty());
+        assert_eq!(key_event_to_bytes(&pgup), b"\x1b[5~".to_vec());
+
+        let pgdn = KeyEvent::new(KeyCode::PageDown, KeyModifiers::empty());
+        assert_eq!(key_event_to_bytes(&pgdn), b"\x1b[6~".to_vec());
+    }
+
+    #[test]
+    fn test_key_event_to_bytes_utf8_char() {
+        let ke = KeyEvent::new(KeyCode::Char('\u{00e9}'), KeyModifiers::empty()); // 'é'
+        let bytes = key_event_to_bytes(&ke);
+        assert_eq!(std::str::from_utf8(&bytes).unwrap(), "\u{00e9}");
+    }
+
+    #[test]
+    fn test_key_event_to_bytes_unknown_returns_empty() {
+        let ke = KeyEvent::new(KeyCode::F(20), KeyModifiers::empty());
+        assert_eq!(key_event_to_bytes(&ke), Vec::<u8>::new());
+    }
 }
 
 /// Execute a selected function inline using PTY

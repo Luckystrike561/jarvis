@@ -446,3 +446,390 @@ pub fn spawn_pty_command(
         writer,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::script::{ScriptFile, ScriptFunction, ScriptType};
+    use std::path::PathBuf;
+
+    // --- shell_escape tests ---
+
+    #[test]
+    fn test_shell_escape_simple() {
+        assert_eq!(shell_escape("hello"), "'hello'");
+    }
+
+    #[test]
+    fn test_shell_escape_with_spaces() {
+        assert_eq!(shell_escape("hello world"), "'hello world'");
+    }
+
+    #[test]
+    fn test_shell_escape_with_double_quotes() {
+        assert_eq!(shell_escape(r#"say "hi""#), r#"'say "hi"'"#);
+    }
+
+    #[test]
+    fn test_shell_escape_with_single_quotes() {
+        assert_eq!(shell_escape("it's"), "'it'\\''s'");
+    }
+
+    #[test]
+    fn test_shell_escape_with_dollar_and_backtick() {
+        assert_eq!(shell_escape("$HOME `whoami`"), "'$HOME `whoami`'");
+    }
+
+    #[test]
+    fn test_shell_escape_with_backslash() {
+        assert_eq!(shell_escape(r"path\to\file"), r"'path\to\file'");
+    }
+
+    #[test]
+    fn test_shell_escape_empty() {
+        assert_eq!(shell_escape(""), "''");
+    }
+
+    // --- build_command tests ---
+
+    fn make_func(name: &str, script_type: ScriptType) -> ScriptFunction {
+        ScriptFunction {
+            name: name.to_string(),
+            display_name: name.to_string(),
+            category: "Test".to_string(),
+            description: String::new(),
+            emoji: None,
+            ignored: false,
+            script_type,
+        }
+    }
+
+    fn make_script_file(path: &str, script_type: ScriptType) -> ScriptFile {
+        ScriptFile {
+            path: PathBuf::from(path),
+            name: PathBuf::from(path)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default(),
+            category: "Test".to_string(),
+            display_name: "Test".to_string(),
+            script_type,
+        }
+    }
+
+    #[test]
+    fn test_build_command_bash() {
+        let func = make_func("deploy", ScriptType::Bash);
+        let sf = make_script_file("/home/user/scripts/deploy.sh", ScriptType::Bash);
+
+        let (program, args, cwd) = build_command(&func, &sf).unwrap();
+
+        assert_eq!(program, "bash");
+        assert_eq!(args.len(), 2);
+        assert_eq!(args[0], "-c");
+        assert!(args[1].contains("deploy"));
+        assert!(args[1].contains("source"));
+        assert_eq!(cwd, PathBuf::from("/home/user/scripts"));
+    }
+
+    #[test]
+    fn test_build_command_bash_shell_escapes_paths() {
+        let func = make_func("run", ScriptType::Bash);
+        let sf = make_script_file("/home/user/my scripts/test's.sh", ScriptType::Bash);
+
+        let (_, args, _) = build_command(&func, &sf).unwrap();
+        let bash_cmd = &args[1];
+
+        // The command should use single-quote escaping, not double quotes
+        assert!(
+            bash_cmd.contains("'"),
+            "Expected single-quote escaping in: {}",
+            bash_cmd
+        );
+        // Verify the single quote in the filename is properly escaped
+        assert!(
+            bash_cmd.contains("'\\''"),
+            "Expected escaped single quote in: {}",
+            bash_cmd
+        );
+    }
+
+    #[test]
+    fn test_build_command_npm() {
+        let func = make_func("build", ScriptType::PackageJson);
+        let sf = make_script_file("/app/package.json", ScriptType::PackageJson);
+
+        let (program, args, cwd) = build_command(&func, &sf).unwrap();
+
+        assert_eq!(program, "npm");
+        assert_eq!(args, vec!["run", "build"]);
+        assert_eq!(cwd, PathBuf::from("/app"));
+    }
+
+    #[test]
+    fn test_build_command_devbox() {
+        let func = make_func("start", ScriptType::DevboxJson);
+        let sf = make_script_file("/app/devbox.json", ScriptType::DevboxJson);
+
+        let (program, args, cwd) = build_command(&func, &sf).unwrap();
+
+        assert_eq!(program, "devbox");
+        assert_eq!(args, vec!["run", "start"]);
+        assert_eq!(cwd, PathBuf::from("/app"));
+    }
+
+    #[test]
+    fn test_build_command_task() {
+        let func = make_func("lint", ScriptType::Task);
+        let sf = make_script_file("/app/Taskfile.yml", ScriptType::Task);
+
+        let (program, args, cwd) = build_command(&func, &sf).unwrap();
+
+        assert_eq!(program, "task");
+        assert_eq!(args, vec!["--taskfile", "/app/Taskfile.yml", "lint"]);
+        assert_eq!(cwd, PathBuf::from("/app"));
+    }
+
+    #[test]
+    fn test_build_command_makefile() {
+        let func = make_func("clean", ScriptType::Makefile);
+        let sf = make_script_file("/app/Makefile", ScriptType::Makefile);
+
+        let (program, args, cwd) = build_command(&func, &sf).unwrap();
+
+        assert_eq!(program, "make");
+        assert_eq!(args, vec!["--file", "/app/Makefile", "clean"]);
+        assert_eq!(cwd, PathBuf::from("/app"));
+    }
+
+    #[test]
+    fn test_build_command_just() {
+        let func = make_func("test", ScriptType::Just);
+        let sf = make_script_file("/app/justfile", ScriptType::Just);
+
+        let (program, args, cwd) = build_command(&func, &sf).unwrap();
+
+        assert_eq!(program, "just");
+        assert_eq!(args, vec!["--justfile", "/app/justfile", "test"]);
+        assert_eq!(cwd, PathBuf::from("/app"));
+    }
+
+    #[test]
+    fn test_build_command_cargo_bin() {
+        let func = make_func("bin:myapp", ScriptType::CargoToml);
+        let sf = make_script_file("/app/Cargo.toml", ScriptType::CargoToml);
+
+        let (program, args, cwd) = build_command(&func, &sf).unwrap();
+
+        assert_eq!(program, "cargo");
+        assert_eq!(
+            args,
+            vec![
+                "run",
+                "--bin",
+                "myapp",
+                "--manifest-path",
+                "/app/Cargo.toml"
+            ]
+        );
+        assert_eq!(cwd, PathBuf::from("/app"));
+    }
+
+    #[test]
+    fn test_build_command_cargo_example() {
+        let func = make_func("example:demo", ScriptType::CargoToml);
+        let sf = make_script_file("/app/Cargo.toml", ScriptType::CargoToml);
+
+        let (program, args, cwd) = build_command(&func, &sf).unwrap();
+
+        assert_eq!(program, "cargo");
+        assert_eq!(
+            args,
+            vec![
+                "run",
+                "--example",
+                "demo",
+                "--manifest-path",
+                "/app/Cargo.toml"
+            ]
+        );
+        assert_eq!(cwd, PathBuf::from("/app"));
+    }
+
+    // --- CommandHistory tests ---
+
+    #[test]
+    fn test_command_history_new() {
+        let history = CommandHistory::new();
+        assert!(history.entries.is_empty());
+    }
+
+    #[test]
+    fn test_command_history_key_for() {
+        let func = make_func("deploy", ScriptType::Bash);
+        let key = CommandHistory::key_for(&func);
+        assert_eq!(key, "Bash:deploy");
+    }
+
+    #[test]
+    fn test_command_history_key_for_different_types() {
+        let bash_func = make_func("build", ScriptType::Bash);
+        let npm_func = make_func("build", ScriptType::PackageJson);
+
+        let bash_key = CommandHistory::key_for(&bash_func);
+        let npm_key = CommandHistory::key_for(&npm_func);
+
+        // Same name, different type => different key
+        assert_ne!(bash_key, npm_key);
+    }
+
+    #[test]
+    fn test_command_history_insert_and_get() {
+        let mut history = CommandHistory::new();
+        let func = make_func("deploy", ScriptType::Bash);
+
+        assert!(history.get(&func).is_none());
+
+        let state = ExecutionState {
+            status: ExecutionStatus::Succeeded,
+            parser: Arc::new(Mutex::new(vt100::Parser::new(24, 80, 100))),
+            exit_code: Some(0),
+            started_at: Instant::now(),
+            finished_at: Some(Instant::now()),
+            display_name: "Deploy".to_string(),
+            category: "Test".to_string(),
+        };
+
+        history.insert(&func, state);
+        let retrieved = history.get(&func).unwrap();
+        assert_eq!(retrieved.status, ExecutionStatus::Succeeded);
+        assert_eq!(retrieved.exit_code, Some(0));
+    }
+
+    #[test]
+    fn test_command_history_get_mut() {
+        let mut history = CommandHistory::new();
+        let func = make_func("test", ScriptType::Bash);
+
+        let state = ExecutionState {
+            status: ExecutionStatus::Running,
+            parser: Arc::new(Mutex::new(vt100::Parser::new(24, 80, 100))),
+            exit_code: None,
+            started_at: Instant::now(),
+            finished_at: None,
+            display_name: "Test".to_string(),
+            category: "Test".to_string(),
+        };
+
+        history.insert(&func, state);
+
+        let entry = history.get_mut(&func).unwrap();
+        entry.status = ExecutionStatus::Failed;
+        entry.exit_code = Some(1);
+
+        assert_eq!(history.get(&func).unwrap().status, ExecutionStatus::Failed);
+    }
+
+    #[test]
+    fn test_command_history_replace() {
+        let mut history = CommandHistory::new();
+        let func = make_func("build", ScriptType::Bash);
+
+        let state1 = ExecutionState {
+            status: ExecutionStatus::Failed,
+            parser: Arc::new(Mutex::new(vt100::Parser::new(24, 80, 100))),
+            exit_code: Some(1),
+            started_at: Instant::now(),
+            finished_at: Some(Instant::now()),
+            display_name: "Build".to_string(),
+            category: "Test".to_string(),
+        };
+        history.insert(&func, state1);
+
+        let state2 = ExecutionState {
+            status: ExecutionStatus::Succeeded,
+            parser: Arc::new(Mutex::new(vt100::Parser::new(24, 80, 100))),
+            exit_code: Some(0),
+            started_at: Instant::now(),
+            finished_at: Some(Instant::now()),
+            display_name: "Build".to_string(),
+            category: "Test".to_string(),
+        };
+        history.insert(&func, state2);
+
+        // Should have the latest state
+        assert_eq!(
+            history.get(&func).unwrap().status,
+            ExecutionStatus::Succeeded
+        );
+        assert_eq!(history.entries.len(), 1);
+    }
+
+    // --- find_script_file tests ---
+
+    #[test]
+    fn test_find_script_file_bash() {
+        let func = make_func("deploy", ScriptType::Bash);
+        let files = vec![
+            make_script_file("/app/Makefile", ScriptType::Makefile),
+            make_script_file("/app/scripts/deploy.sh", ScriptType::Bash),
+        ];
+
+        let result = find_script_file(&func, "Test", &files);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().script_type, ScriptType::Bash);
+    }
+
+    #[test]
+    fn test_find_script_file_no_match_wrong_type() {
+        let func = make_func("deploy", ScriptType::Bash);
+        let files = vec![make_script_file(
+            "/app/package.json",
+            ScriptType::PackageJson,
+        )];
+
+        let result = find_script_file(&func, "Test", &files);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_find_script_file_no_match_wrong_category() {
+        let func = make_func("deploy", ScriptType::Bash);
+        let mut sf = make_script_file("/app/deploy.sh", ScriptType::Bash);
+        sf.category = "Other".to_string();
+        let files = vec![sf];
+
+        let result = find_script_file(&func, "Test", &files);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_find_script_file_nx_prefix_match() {
+        let func = make_func("my-app:build", ScriptType::NxJson);
+        let mut sf = make_script_file("/app/nx.json", ScriptType::NxJson);
+        sf.category = "my-app".to_string();
+        let files = vec![sf];
+
+        // Nx categories use the "nx:<project>:" prefix format
+        let result = find_script_file(&func, "nx:my-app:targets", &files);
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_find_script_file_empty_list() {
+        let func = make_func("deploy", ScriptType::Bash);
+        let result = find_script_file(&func, "Test", &[]);
+        assert!(result.is_none());
+    }
+
+    // --- ExecutionStatus tests ---
+
+    #[test]
+    fn test_execution_status_equality() {
+        assert_eq!(ExecutionStatus::Idle, ExecutionStatus::Idle);
+        assert_eq!(ExecutionStatus::Running, ExecutionStatus::Running);
+        assert_eq!(ExecutionStatus::Succeeded, ExecutionStatus::Succeeded);
+        assert_eq!(ExecutionStatus::Failed, ExecutionStatus::Failed);
+        assert_ne!(ExecutionStatus::Idle, ExecutionStatus::Running);
+    }
+}

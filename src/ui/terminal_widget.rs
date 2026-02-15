@@ -290,3 +290,194 @@ pub fn total_content_lines(parser: &Arc<Mutex<vt100::Parser>>) -> usize {
     parser.screen_mut().set_scrollback(original);
     max_scrollback + rows as usize
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+
+    fn make_parser(rows: u16, cols: u16, scrollback: usize) -> Arc<Mutex<vt100::Parser>> {
+        Arc::new(Mutex::new(vt100::Parser::new(rows, cols, scrollback)))
+    }
+
+    fn parser_with_content(text: &str) -> Arc<Mutex<vt100::Parser>> {
+        let parser = make_parser(24, 80, 1000);
+        {
+            let mut p = parser.lock().unwrap();
+            p.process(text.as_bytes());
+        }
+        parser
+    }
+
+    // --- is_selected tests ---
+
+    #[test]
+    fn test_is_selected_inactive() {
+        let parser = make_parser(24, 80, 100);
+        let view = TerminalView::new(&parser).selection(false, Some((0, 0)), Some((2, 5)));
+        assert!(!view.is_selected(1, 3));
+    }
+
+    #[test]
+    fn test_is_selected_no_start() {
+        let parser = make_parser(24, 80, 100);
+        let view = TerminalView::new(&parser).selection(true, None, Some((2, 5)));
+        assert!(!view.is_selected(1, 3));
+    }
+
+    #[test]
+    fn test_is_selected_no_end() {
+        let parser = make_parser(24, 80, 100);
+        let view = TerminalView::new(&parser).selection(true, Some((0, 0)), None);
+        assert!(!view.is_selected(1, 3));
+    }
+
+    #[test]
+    fn test_is_selected_single_row() {
+        let parser = make_parser(24, 80, 100);
+        let view = TerminalView::new(&parser).selection(true, Some((2, 3)), Some((2, 7)));
+
+        assert!(!view.is_selected(2, 2)); // before start
+        assert!(view.is_selected(2, 3)); // start
+        assert!(view.is_selected(2, 5)); // middle
+        assert!(view.is_selected(2, 7)); // end
+        assert!(!view.is_selected(2, 8)); // after end
+        assert!(!view.is_selected(1, 5)); // wrong row
+        assert!(!view.is_selected(3, 5)); // wrong row
+    }
+
+    #[test]
+    fn test_is_selected_multi_row() {
+        let parser = make_parser(24, 80, 100);
+        let view = TerminalView::new(&parser).selection(true, Some((1, 5)), Some((3, 10)));
+
+        // Row before selection
+        assert!(!view.is_selected(0, 5));
+
+        // First row: only from col 5 onwards
+        assert!(!view.is_selected(1, 4));
+        assert!(view.is_selected(1, 5));
+        assert!(view.is_selected(1, 79));
+
+        // Middle row: all columns
+        assert!(view.is_selected(2, 0));
+        assert!(view.is_selected(2, 40));
+        assert!(view.is_selected(2, 79));
+
+        // Last row: only up to col 10
+        assert!(view.is_selected(3, 0));
+        assert!(view.is_selected(3, 10));
+        assert!(!view.is_selected(3, 11));
+
+        // Row after selection
+        assert!(!view.is_selected(4, 5));
+    }
+
+    #[test]
+    fn test_is_selected_reversed_start_end() {
+        let parser = make_parser(24, 80, 100);
+        // Start after end (user dragged upwards)
+        let view = TerminalView::new(&parser).selection(true, Some((3, 10)), Some((1, 5)));
+
+        // Should normalize and work the same
+        assert!(view.is_selected(1, 5));
+        assert!(view.is_selected(2, 0));
+        assert!(view.is_selected(3, 10));
+        assert!(!view.is_selected(3, 11));
+    }
+
+    // --- total_content_lines tests ---
+
+    #[test]
+    fn test_total_content_lines_empty() {
+        let parser = make_parser(24, 80, 1000);
+        // Empty parser has just the screen rows (24) and no scrollback
+        let total = total_content_lines(&parser);
+        assert_eq!(total, 24);
+    }
+
+    #[test]
+    fn test_total_content_lines_with_content() {
+        // Write enough lines to push some into scrollback
+        let parser = make_parser(5, 80, 1000);
+        {
+            let mut p = parser.lock().unwrap();
+            for i in 0..20 {
+                p.process(format!("line {}\n", i).as_bytes());
+            }
+        }
+        let total = total_content_lines(&parser);
+        // Should be scrollback lines + screen rows
+        assert!(total >= 20, "Expected >= 20 total lines, got {}", total);
+    }
+
+    // --- max_scrollback tests ---
+
+    #[test]
+    fn test_max_scrollback_empty() {
+        let parser = make_parser(24, 80, 1000);
+        // No content => no scrollback
+        assert_eq!(max_scrollback(&parser), 0);
+    }
+
+    #[test]
+    fn test_max_scrollback_with_content() {
+        let parser = make_parser(5, 80, 1000);
+        {
+            let mut p = parser.lock().unwrap();
+            for i in 0..20 {
+                p.process(format!("line {}\n", i).as_bytes());
+            }
+        }
+        let max = max_scrollback(&parser);
+        assert!(max > 0, "Expected some scrollback, got 0");
+    }
+
+    // --- get_selected_text tests ---
+
+    #[test]
+    fn test_get_selected_text_simple() {
+        let parser = parser_with_content("Hello, World!");
+        let text = get_selected_text(&parser, 0, (0, 0), (0, 4));
+        assert_eq!(text, "Hello");
+    }
+
+    #[test]
+    fn test_get_selected_text_reversed_selection() {
+        let parser = parser_with_content("Hello, World!");
+        // End before start — should normalize
+        let text = get_selected_text(&parser, 0, (0, 4), (0, 0));
+        assert_eq!(text, "Hello");
+    }
+
+    #[test]
+    fn test_get_selected_text_multiline() {
+        let parser = parser_with_content("line1\r\nline2\r\nline3\r\n");
+        let text = get_selected_text(&parser, 0, (0, 0), (1, 4));
+        assert!(text.contains("line1"));
+        assert!(text.contains("line2"));
+    }
+
+    // --- vt100_color_to_ratatui tests ---
+
+    #[test]
+    fn test_vt100_color_default() {
+        assert_eq!(vt100_color_to_ratatui(vt100::Color::Default), None);
+    }
+
+    #[test]
+    fn test_vt100_color_indexed() {
+        assert_eq!(
+            vt100_color_to_ratatui(vt100::Color::Idx(1)),
+            Some(Color::Indexed(1))
+        );
+    }
+
+    #[test]
+    fn test_vt100_color_rgb() {
+        assert_eq!(
+            vt100_color_to_ratatui(vt100::Color::Rgb(255, 128, 0)),
+            Some(Color::Rgb(255, 128, 0))
+        );
+    }
+}
