@@ -15,7 +15,7 @@ We use **Devbox** for reproducible development environments. This ensures all co
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/jarvis.git
+git clone https://github.com/Luckystrike561/jarvis.git
 cd jarvis
 
 # Start devbox shell (installs all dependencies)
@@ -78,73 +78,16 @@ shfmt -w scripts/          # Format bash scripts
 
 ## 📝 Code Style
 
-### Rust
+See [CODING_RULES.md](CODING_RULES.md) for the full coding standards, including Rust lint rules,
+naming conventions, error handling patterns, bash script guidelines, and commit format.
 
-- **Format**: Use `rustfmt` (run `devbox run fmt` or `cargo fmt`)
-- **Lint**: Pass `clippy` with no warnings (run `devbox run check`)
-- **Naming**: 
-  - `snake_case` for functions and variables
-  - `PascalCase` for structs and enums
-  - `SCREAMING_SNAKE_CASE` for constants
-- **Error Handling**: Use `anyhow::Result<T>`, avoid `.unwrap()` in production code
-- **Documentation**: Add doc comments for public APIs
+**Quick summary:**
 
-Example:
-```rust
-/// Execute a bash function interactively
-///
-/// # Arguments
-/// * `script_path` - Path to the bash script
-/// * `function_name` - Name of the function to execute
-pub fn execute_function(script_path: &Path, function_name: &str) -> anyhow::Result<()> {
-    // Implementation
-}
-```
-
-### Bash Scripts
-
-- **Format**: Use `shfmt` (run `devbox run fmt`)
-- **Lint**: Pass `shellcheck` (run `devbox run lint`)
-- **Shebang**: Always use `#!/usr/bin/env bash`
-- **Naming**:
-  - `snake_case` for functions and variables
-  - `ALL_CAPS` for constants and arrays
-- **Documentation**: Add comments for complex logic
-- **Auto-Discovery**: All bash functions are automatically discovered by Jarvis
-
-Example:
-```bash
-#!/usr/bin/env bash
-
-# Example script showing Jarvis-compatible functions
-
-# All functions are automatically discovered
-hello_world() {
-    echo "Hello from Jarvis!"
-}
-
-# @emoji 🔧
-# @description Display system information
-system_info() {
-    echo "OS: $(uname -s)"
-    echo "Kernel: $(uname -r)"
-}
-```
-
-### npm Scripts
-
-Jarvis automatically discovers npm scripts from `package.json` files. No special format required - just define scripts in the `"scripts"` section:
-
-```json
-{
-  "name": "example-project",
-  "scripts": {
-    "build": "webpack --mode production",
-    "test": "jest",
-    "dev": "webpack-dev-server"
-  }
-}
-```
+- **Format**: `cargo fmt` (enforced by `rustfmt.toml`)
+- **Lint**: `cargo clippy` with zero warnings (enforced by `Cargo.toml [lints]`)
+- **No `unsafe` code** (forbidden project-wide)
+- **No `.unwrap()`** in production code (denied by clippy)
+- **Error handling**: `anyhow::Result<T>` with `?` operator and `.with_context()`
 
 ## 🏗️ Project Structure
 
@@ -152,16 +95,28 @@ Jarvis automatically discovers npm scripts from `package.json` files. No special
 jarvis/
 ├── src/
 │   ├── main.rs           # Entry point
+│   ├── lib.rs            # Module declarations
 │   ├── ui/               # TUI components
 │   │   ├── mod.rs
-│   │   ├── app.rs        # Main app state and logic
-│   │   └── render.rs     # UI rendering
-│   └── script/           # Script discovery and execution
+│   │   ├── app.rs            # Main app state and logic
+│   │   ├── render.rs         # UI rendering
+│   │   ├── pty_runner.rs     # PTY-based script execution
+│   │   └── terminal_widget.rs # Terminal output widget
+│   └── script/           # Script discovery and parsing
 │       ├── mod.rs
-│       ├── parser.rs     # Bash script parsing
-│       ├── npm_parser.rs # package.json parsing
-│       ├── discovery.rs  # Script file discovery (bash + npm)
-│       └── executor.rs   # Script execution (bash + npm)
+│       ├── discovery.rs      # Script file discovery
+│       ├── parser.rs         # Bash script parsing
+│       ├── npm_parser.rs     # package.json parsing
+│       ├── cargo_parser.rs   # Cargo.toml parsing
+│       ├── devbox_parser.rs  # devbox.json parsing
+│       ├── just_parser.rs    # Justfile parsing
+│       ├── makefile_parser.rs # Makefile parsing
+│       ├── nx_parser.rs      # Nx workspace parsing
+│       ├── task_parser.rs    # Taskfile.yml parsing
+│       └── utils.rs          # Shared parser utilities
+│   └── usage/            # Usage tracking
+│       ├── mod.rs
+│       └── storage.rs        # Usage data persistence
 ├── example/              # Example scripts and test files
 │   ├── jarvis/          # Bash script examples
 │   ├── node/            # npm/package.json examples
@@ -198,7 +153,7 @@ jarvis/
 ## 🧪 Testing
 
 ```bash
-# Run all 90 tests
+# Run all 258 tests
 devbox run test
 
 # Run specific test
@@ -240,7 +195,7 @@ Look for issues tagged with `good first issue` - these are beginner-friendly tas
 
 ## 📧 Questions?
 
-- Open a [Discussion](https://github.com/yourusername/jarvis/discussions)
+- Open a [Discussion](https://github.com/Luckystrike561/jarvis/discussions)
 - Join our community chat (if available)
 - Comment on relevant issues
 
