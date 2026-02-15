@@ -25,18 +25,10 @@
 //! - `./jarvis/` subdirectory
 //!
 //! See [`discovery`] module for details.
-//!
-//! ## Execution
-//!
-//! All script types support interactive execution with full terminal access,
-//! allowing scripts to use stdin/stdout/stderr directly.
-//!
-//! See [`executor`] module for details.
 
 pub mod cargo_parser;
 pub mod devbox_parser;
 pub mod discovery;
-pub mod executor;
 pub mod just_parser;
 pub mod makefile_parser;
 pub mod npm_parser;
@@ -50,11 +42,6 @@ pub use devbox_parser::parse_devbox_json;
 pub use discovery::{
     discover_scripts, discover_scripts_shallow, discover_single_file, format_display_name,
     prewarm_tool_checks, ScriptFile, ScriptType,
-};
-pub use executor::{
-    execute_cargo_target_interactive, execute_devbox_script_interactive,
-    execute_function_interactive, execute_just_recipe_interactive, execute_make_target_interactive,
-    execute_npm_script_interactive, execute_nx_target_interactive, execute_task_interactive,
 };
 pub use just_parser::list_recipes as list_just_recipes;
 pub use makefile_parser::list_targets as list_make_targets;

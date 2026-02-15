@@ -56,7 +56,6 @@ pub struct App {
     /// Functions that appear in the "Frequently Used" category
     pub frequent_functions: Vec<ScriptFunction>,
     pub selected_index: usize,
-    pub output: Vec<String>,
     pub output_scroll: usize,
     pub script_scroll: usize,
     pub should_quit: bool,
@@ -79,10 +78,6 @@ pub struct App {
     pub animation_tick: u64,
     /// Last animation update timestamp
     pub last_animation_tick: Instant,
-    /// Output search mode
-    pub output_search_mode: bool,
-    /// Output search query
-    pub output_search_query: String,
     /// Whether the 'g' key was pressed (waiting for second 'g' for gg)
     pub pending_g: bool,
 
@@ -103,7 +98,6 @@ impl App {
             functions,
             frequent_functions: Vec::new(),
             selected_index: 0,
-            output: Vec::new(),
             output_scroll: 0,
             script_scroll: 0,
             should_quit: false,
@@ -119,8 +113,6 @@ impl App {
             active_function: None,
             animation_tick: 0,
             last_animation_tick: Instant::now(),
-            output_search_mode: false,
-            output_search_query: String::new(),
             pending_g: false,
             mouse_selecting: false,
             mouse_sel_start: None,
@@ -562,9 +554,9 @@ impl App {
         items.get(self.selected_index).cloned()
     }
 
-    /// Get the ScriptFunction for the currently selected tree item (if a function is selected).
+    /// Get the `ScriptFunction` for the currently selected tree item (if a function is selected).
     /// For "Frequently Used" entries, returns a copy with the original category
-    /// so that CommandHistory lookups match the key used at execution time.
+    /// so that `CommandHistory` lookups match the key used at execution time.
     pub fn selected_function(&self) -> Option<ScriptFunction> {
         if let Some(TreeItem::Function(func)) = self.selected_item() {
             if func.category == FREQUENTLY_USED_CATEGORY {

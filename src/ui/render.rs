@@ -350,7 +350,9 @@ fn render_terminal_output(frame: &mut Frame, app: &mut App, area: Rect) {
         }
         ExecutionStatus::Failed => {
             let exit_code = if pty_is_selected {
-                app.pty_handle.as_ref().and_then(|h| h.poll_exit_code())
+                app.pty_handle
+                    .as_ref()
+                    .and_then(super::pty_runner::PtyHandle::poll_exit_code)
             } else if let Some(ref func) = selected {
                 app.command_history.get(func).and_then(|s| s.exit_code)
             } else {
@@ -410,8 +412,6 @@ fn render_terminal_output(frame: &mut Frame, app: &mut App, area: Rect) {
 fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
     let help_text = if app.search_mode {
         "[↑↓] Navigate  [Enter] Execute  [ESC] Exit Search  [Backspace] Delete"
-    } else if app.output_search_mode {
-        "[Enter] Confirm  [ESC] Cancel  [Backspace] Delete"
     } else {
         match app.focus {
             FocusPane::Details | FocusPane::ScriptList => {
