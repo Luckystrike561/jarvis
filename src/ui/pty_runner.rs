@@ -228,6 +228,15 @@ fn build_command(
             args.push(func.name.clone());
             Ok((cmd.to_string(), args, dir))
         }
+        ScriptType::Terraform => {
+            // For Terraform, the ScriptFile path is the directory containing .tf files
+            let dir = path.clone();
+            let args: Vec<String> = func.name.split_whitespace().map(String::from).collect();
+            let binary = script::terraform_parser::resolve_terraform_binary()
+                .unwrap_or("terraform")
+                .to_string();
+            Ok((binary, args, dir))
+        }
     }
 }
 
@@ -820,6 +829,57 @@ mod tests {
         let func = make_func("deploy", ScriptType::Bash);
         let result = find_script_file(&func, "Test", &[]);
         assert!(result.is_none());
+    }
+
+    // --- Terraform build_command tests ---
+
+    #[test]
+    fn test_build_command_terraform_common() {
+        let func = make_func("plan", ScriptType::Terraform);
+        let sf = make_script_file("/infra/terraform", ScriptType::Terraform);
+
+        let (program, args, cwd) = build_command(&func, &sf).unwrap();
+
+        // Binary may be "terraform" or "tofu" depending on what's installed
+        assert!(
+            program == "terraform" || program == "tofu",
+            "Expected 'terraform' or 'tofu', got '{}'",
+            program
+        );
+        assert_eq!(args, vec!["plan"]);
+        assert_eq!(cwd, PathBuf::from("/infra/terraform"));
+    }
+
+    #[test]
+    fn test_build_command_terraform_workspace_select() {
+        let func = make_func("workspace select staging", ScriptType::Terraform);
+        let sf = make_script_file("/infra/terraform", ScriptType::Terraform);
+
+        let (program, args, cwd) = build_command(&func, &sf).unwrap();
+
+        assert!(
+            program == "terraform" || program == "tofu",
+            "Expected 'terraform' or 'tofu', got '{}'",
+            program
+        );
+        assert_eq!(args, vec!["workspace", "select", "staging"]);
+        assert_eq!(cwd, PathBuf::from("/infra/terraform"));
+    }
+
+    #[test]
+    fn test_build_command_terraform_init() {
+        let func = make_func("init", ScriptType::Terraform);
+        let sf = make_script_file("/infra", ScriptType::Terraform);
+
+        let (program, args, cwd) = build_command(&func, &sf).unwrap();
+
+        assert!(
+            program == "terraform" || program == "tofu",
+            "Expected 'terraform' or 'tofu', got '{}'",
+            program
+        );
+        assert_eq!(args, vec!["init"]);
+        assert_eq!(cwd, PathBuf::from("/infra"));
     }
 
     // --- ExecutionStatus tests ---

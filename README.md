@@ -20,9 +20,9 @@ A beautiful TUI for managing and executing scripts with zero configuration.
 
 ## Features
 
-- **Zero Configuration** - Auto-discovers bash functions, npm scripts, devbox scripts, Taskfile tasks, and Makefile targets
+- **Zero Configuration** - Auto-discovers bash functions, npm scripts, devbox scripts, Taskfile tasks, Makefile targets, Justfile recipes, Cargo commands, Nx targets, and Terraform/OpenTofu commands
 - **Beautiful TUI** - Modern terminal interface built with Ratatui
-- **Multi-Language Support** - Works with `.sh` files, `package.json`, `devbox.json`, `Taskfile.yml`, and `Makefile`
+- **Multi-Language Support** - Works with `.sh` files, `package.json`, `devbox.json`, `Taskfile.yml`, `Makefile`, `justfile`, `Cargo.toml`, Nx workspaces (`nx.json`/`project.json`), and Terraform/OpenTofu (`.tf` files)
 - **Single Binary** - Compile once, run anywhere
 
 ## Installation
@@ -153,9 +153,41 @@ test: build
 	cargo test
 ```
 
+**Just** - From `justfile`:
+
+```just
+# Build the project
+build:
+    cargo build
+
+# Run tests
+test: build
+    cargo test
+```
+
+**Cargo** - From `Cargo.toml`:
+
+Jarvis discovers common Cargo commands (build, test, run, clippy, fmt, etc.) when a `Cargo.toml` is present.
+
+**Nx** - From Nx workspaces (`nx.json` / `project.json`):
+
+Jarvis discovers Nx project targets in monorepo workspaces. Projects are grouped by name with their configured targets (build, test, lint, serve, etc.).
+
+**Terraform / OpenTofu** - From `.tf` files:
+
+Jarvis discovers Terraform or OpenTofu projects and provides common commands (init, plan, apply, destroy, validate, fmt). Workspaces are listed when more than one exists. Supports both `terraform` and `tofu` binaries with automatic detection.
+
 > **Note:** Task support requires the `task` binary to be installed. See [taskfile.dev](https://taskfile.dev) for installation instructions.
 
 > **Note:** Make support requires the `make` binary to be installed. It is pre-installed on most Unix systems.
+
+> **Note:** Just support requires the `just` binary to be installed. See [just.systems](https://just.systems) for installation instructions.
+
+> **Note:** Cargo support requires the `cargo` binary (part of the Rust toolchain). See [rustup.rs](https://rustup.rs) for installation instructions.
+
+> **Note:** Nx support requires the `npx` binary (part of Node.js/npm). See [nodejs.org](https://nodejs.org) for installation instructions.
+
+> **Note:** Terraform/OpenTofu support requires the `terraform` or `tofu` binary. Jarvis checks for `terraform` first and falls back to `tofu`. See [terraform.io](https://www.terraform.io) or [opentofu.org](https://opentofu.org) for installation instructions.
 
 ### Function Annotations
 
@@ -204,6 +236,19 @@ deploy:
 # @ignore
 _internal_helper:
 	@echo "helper"
+```
+
+**Justfile recipes:**
+
+```just
+# @emoji 🚀
+# @description Deploy the application to production
+deploy:
+    ./deploy.sh
+
+# @ignore
+_internal_helper:
+    @echo "helper"
 ```
 
 | Annotation | Description |
