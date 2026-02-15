@@ -201,7 +201,7 @@ async fn run_application(args: Args) -> Result<()> {
         }
 
         if script_files.is_empty() {
-            anyhow::bail!("No scripts found in {} (also checked: ./script/, ./scripts/, ./jarvis/). Add bash scripts (.sh), package.json, devbox.json, Taskfile.yml, Makefile, justfile, Cargo.toml, or nx.json to get started.", current_dir.display());
+            anyhow::bail!("No scripts found in {} (also checked: ./script/, ./scripts/, ./jarvis/). Add bash scripts (.sh), package.json, devbox.json, Taskfile.yml, Makefile, justfile, Cargo.toml, nx.json, or *.tf files to get started.", current_dir.display());
         }
 
         (script_files, current_dir)
@@ -396,6 +396,27 @@ async fn run_application(args: Args) -> Result<()> {
                     }
                     Err(e) => ParseResult::Error(path.display().to_string(), e),
                 },
+                script::ScriptType::Terraform => {
+                    match script::list_terraform_commands(&path, &category) {
+                        Ok(commands) => {
+                            let functions: Vec<script::ScriptFunction> = commands
+                                .into_iter()
+                                .filter(|c| !c.ignored)
+                                .map(|c| script::ScriptFunction {
+                                    name: c.name,
+                                    display_name: c.display_name,
+                                    category: c.category,
+                                    description: c.description,
+                                    emoji: c.emoji,
+                                    ignored: c.ignored,
+                                    script_type: script::ScriptType::Terraform,
+                                })
+                                .collect();
+                            ParseResult::Functions(functions)
+                        }
+                        Err(e) => ParseResult::Error(path.display().to_string(), e),
+                    }
+                }
             })
         })
         .collect();

@@ -10,6 +10,7 @@
 //! - **Taskfiles** (`Taskfile.yml`, etc.) - Tasks defined in go-task format
 //! - **Makefiles** (`Makefile`, etc.) - Targets defined in GNU Make format
 //! - **Justfiles** (`justfile`, etc.) - Recipes defined in just format
+//! - **Terraform** (`*.tf`) - Terraform infrastructure-as-code commands
 //!
 //! ## Discovery Locations
 //!
@@ -51,6 +52,7 @@ pub enum ScriptType {
     Just,
     CargoToml,
     NxJson,
+    Terraform,
 }
 
 #[derive(Debug, Clone)]
@@ -114,6 +116,7 @@ pub fn prewarm_tool_checks() {
     std::thread::spawn(crate::script::just_parser::is_just_available);
     std::thread::spawn(crate::script::cargo_parser::is_cargo_available);
     std::thread::spawn(crate::script::nx_parser::is_nx_available);
+    std::thread::spawn(crate::script::terraform_parser::is_terraform_available);
 }
 
 /// Formats a filename into a display-friendly name
@@ -204,7 +207,8 @@ pub fn discover_single_file(file_path: &Path) -> Result<ScriptFile> {
         | ScriptType::Makefile
         | ScriptType::Just
         | ScriptType::CargoToml
-        | ScriptType::NxJson => {
+        | ScriptType::NxJson
+        | ScriptType::Terraform => {
             // For JSON/YAML config files and Makefile, use the parent directory name or the filename
             if let Some(parent) = file_path.parent() {
                 parent
@@ -233,6 +237,7 @@ pub fn discover_single_file(file_path: &Path) -> Result<ScriptFile> {
         ScriptType::Just => format!("⚡ {}", format_display_name(&name)),
         ScriptType::CargoToml => format!("🦀 {}", format_display_name(&name)),
         ScriptType::NxJson => format!("🔷 {}", format_display_name(&name)),
+        ScriptType::Terraform => format!("🏗️ {}", format_display_name(&name)),
         _ => format_display_name(&name),
     };
 
@@ -317,18 +322,31 @@ fn determine_script_type(filename: &str, file_path: &Path) -> Result<ScriptType>
         if ext == "sh" {
             return Ok(ScriptType::Bash);
         }
+        if ext == "tf" {
+            if !crate::script::terraform_parser::is_terraform_available() {
+                anyhow::bail!(
+                    "Terraform file found but 'terraform' is not installed or not in PATH. \
+                    Please install Terraform to use this file."
+                );
+            }
+            return Ok(ScriptType::Terraform);
+        }
     }
 
     // Unsupported file type
     anyhow::bail!(
         "Unsupported file type: '{}'. \
-        Supported types: .sh (bash), package.json (npm), devbox.json (devbox), Taskfile.yml (task), Makefile (make), justfile (just), Cargo.toml (cargo), nx.json (nx)",
+        Supported types: .sh (bash), .tf (terraform), package.json (npm), devbox.json (devbox), Taskfile.yml (task), Makefile (make), justfile (just), Cargo.toml (cargo), nx.json (nx)",
         filename
     );
 }
 
 fn discover_scripts_with_depth(scripts_dir: &Path, max_depth: usize) -> Result<Vec<ScriptFile>> {
     let mut scripts = Vec::new();
+
+    // Track directories that already have a Terraform ScriptFile registered.
+    // Multiple .tf files in the same directory should produce only one entry.
+    let mut terraform_dirs: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
 
     // Verify the directory exists and is readable
     if !scripts_dir.exists() {
@@ -566,6 +584,37 @@ fn discover_scripts_with_depth(scripts_dir: &Path, max_depth: usize) -> Result<V
         };
 
         if extension != "sh" {
+            // Check for Terraform .tf files
+            if extension == "tf" {
+                if !crate::script::terraform_parser::is_terraform_available() {
+                    continue;
+                }
+
+                // Only register one ScriptFile per directory
+                let tf_dir = path.parent().unwrap_or(scripts_dir).to_path_buf();
+
+                if terraform_dirs.contains(&tf_dir) {
+                    continue;
+                }
+                terraform_dirs.insert(tf_dir.clone());
+
+                let name = tf_dir
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("terraform")
+                    .to_string();
+
+                let category = name.clone();
+                let display_name = format!("🏗️ {}", format_display_name(&name));
+
+                scripts.push(ScriptFile {
+                    path: tf_dir,
+                    name,
+                    category,
+                    display_name,
+                    script_type: ScriptType::Terraform,
+                });
+            }
             continue;
         }
 
@@ -1042,5 +1091,49 @@ tasks:
         assert_eq!(result.category, "🏠 homelab");
         assert_eq!(result.display_name, "🏠 Homelab");
         assert_eq!(result.script_type, ScriptType::Bash);
+    }
+
+    #[test]
+    fn test_discover_terraform_tf_files() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create .tf files
+        fs::write(temp_dir.path().join("main.tf"), "resource {}").unwrap();
+        fs::write(temp_dir.path().join("variables.tf"), "variable {}").unwrap();
+
+        let result = discover_scripts(temp_dir.path()).unwrap();
+        // If terraform binary is installed we get 1 ScriptFile with Terraform type, else 0
+        let tf_files: Vec<_> = result
+            .iter()
+            .filter(|s| s.script_type == ScriptType::Terraform)
+            .collect();
+        assert!(
+            tf_files.len() <= 1,
+            "should have at most one Terraform script file per directory"
+        );
+        if let Some(sf) = tf_files.first() {
+            assert_eq!(sf.script_type, ScriptType::Terraform);
+            assert!(sf.display_name.contains("🏗️"));
+            // Path should be the directory, not a specific .tf file
+            assert!(sf.path.is_dir());
+        }
+    }
+
+    #[test]
+    fn test_discover_terraform_single_tf_file_per_dir() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create multiple .tf files in the same directory
+        fs::write(temp_dir.path().join("main.tf"), "resource {}").unwrap();
+        fs::write(temp_dir.path().join("outputs.tf"), "output {}").unwrap();
+        fs::write(temp_dir.path().join("variables.tf"), "variable {}").unwrap();
+
+        let result = discover_scripts(temp_dir.path()).unwrap();
+        let tf_files: Vec<_> = result
+            .iter()
+            .filter(|s| s.script_type == ScriptType::Terraform)
+            .collect();
+        // Even with multiple .tf files, we should get at most one entry
+        assert!(tf_files.len() <= 1);
     }
 }

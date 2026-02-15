@@ -15,6 +15,7 @@
 //! | Just | `justfile` | [`just_parser::list_recipes`] |
 //! | Cargo | `Cargo.toml` | [`cargo_parser::list_targets`] |
 //! | Nx | `nx.json` | [`nx_parser::list_targets`] |
+//! | Terraform | `*.tf` | [`terraform_parser::list_commands`] |
 //!
 //! ## Discovery
 //!
@@ -35,6 +36,7 @@ pub mod npm_parser;
 pub mod nx_parser;
 pub mod parser;
 pub mod task_parser;
+pub mod terraform_parser;
 pub mod utils;
 
 pub use cargo_parser::list_targets as list_cargo_targets;
@@ -49,3 +51,4 @@ pub use npm_parser::parse_package_json;
 pub use nx_parser::list_targets as list_nx_targets;
 pub use parser::{parse_script, ScriptFunction};
 pub use task_parser::list_tasks;
+pub use terraform_parser::list_commands as list_terraform_commands;
