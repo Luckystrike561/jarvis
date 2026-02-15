@@ -15,7 +15,7 @@
 use crate::script::{self, ScriptFile, ScriptFunction, ScriptType};
 use anyhow::{Context, Result};
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
-use std::io::Read;
+use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -409,6 +409,8 @@ pub struct PtyHandle {
     pub category: String,
     // Keep the master alive so the PTY doesn't close prematurely
     _master: Arc<Mutex<Option<Box<dyn portable_pty::MasterPty + Send>>>>,
+    /// Writer to send input to the PTY slave (child process stdin)
+    writer: Arc<Mutex<Option<Box<dyn Write + Send>>>>,
 }
 
 impl PtyHandle {
@@ -453,6 +455,17 @@ impl PtyHandle {
                 result
             })
             .unwrap_or_default()
+    }
+
+    /// Write input bytes to the PTY (sends to child process stdin)
+    pub fn write_input(&self, data: &[u8]) -> Result<()> {
+        if let Ok(mut writer_guard) = self.writer.lock() {
+            if let Some(ref mut writer) = *writer_guard {
+                writer.write_all(data).context("Failed to write to PTY")?;
+                writer.flush().context("Failed to flush PTY writer")?;
+            }
+        }
+        Ok(())
     }
 
     /// Convert into an ExecutionState for storage in history
@@ -521,6 +534,13 @@ pub fn spawn_pty_command(
 
     let master: Arc<Mutex<Option<Box<dyn portable_pty::MasterPty + Send>>>> =
         Arc::new(Mutex::new(Some(pty_pair.master)));
+
+    // Extract the writer for sending input to the child process
+    let writer: Arc<Mutex<Option<Box<dyn Write + Send>>>> = {
+        let master_guard = master.lock().unwrap();
+        let w = master_guard.as_ref().and_then(|m| m.take_writer().ok());
+        Arc::new(Mutex::new(w))
+    };
 
     // Reader thread
     let parser_clone = Arc::clone(&parser);
@@ -593,5 +613,6 @@ pub fn spawn_pty_command(
         display_name: func.display_name.clone(),
         category: original_category.to_string(),
         _master: master,
+        writer,
     })
 }

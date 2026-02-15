@@ -38,7 +38,7 @@
 //! - Inline terminal execution with full PTY support
 //! - Animated/colored borders showing execution status
 //! - Neovim-style keybinds for output navigation
-//! - Visual selection mode with clipboard copy
+//! - Mouse drag selection with automatic clipboard copy
 
 pub mod app;
 pub mod pty_runner;

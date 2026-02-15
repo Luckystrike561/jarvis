@@ -79,18 +79,22 @@ pub struct App {
     pub animation_tick: u64,
     /// Last animation update timestamp
     pub last_animation_tick: Instant,
-    /// Whether visual selection mode is active in the output pane
-    pub visual_mode: bool,
-    /// Selection start position (row, col) in the terminal output
-    pub selection_start: Option<(usize, usize)>,
-    /// Selection end/cursor position (row, col) in the terminal output
-    pub selection_end: Option<(usize, usize)>,
     /// Output search mode
     pub output_search_mode: bool,
     /// Output search query
     pub output_search_query: String,
     /// Whether the 'g' key was pressed (waiting for second 'g' for gg)
     pub pending_g: bool,
+
+    // --- Mouse selection state (right pane only) ---
+    /// Whether a mouse drag selection is in progress
+    pub mouse_selecting: bool,
+    /// Selection start position (row, col) in terminal output visible coordinates
+    pub mouse_sel_start: Option<(usize, usize)>,
+    /// Selection end position (row, col) in terminal output visible coordinates
+    pub mouse_sel_end: Option<(usize, usize)>,
+    /// The inner area of the output panel (set during render, used for mouse hit-testing)
+    pub output_inner_area: Option<(u16, u16, u16, u16)>,
 }
 
 impl App {
@@ -115,12 +119,13 @@ impl App {
             active_function: None,
             animation_tick: 0,
             last_animation_tick: Instant::now(),
-            visual_mode: false,
-            selection_start: None,
-            selection_end: None,
             output_search_mode: false,
             output_search_query: String::new(),
             pending_g: false,
+            mouse_selecting: false,
+            mouse_sel_start: None,
+            mouse_sel_end: None,
+            output_inner_area: None,
         }
     }
 
@@ -142,46 +147,57 @@ impl App {
 
     pub fn toggle_focus(&mut self) {
         self.focus = match self.focus {
-            FocusPane::ScriptList => FocusPane::Details,
-            FocusPane::Details => {
+            FocusPane::ScriptList => {
                 if self.has_terminal_output() {
                     FocusPane::Output
                 } else {
                     FocusPane::ScriptList
                 }
             }
+            FocusPane::Details => FocusPane::ScriptList,
             FocusPane::Output => FocusPane::ScriptList,
         };
-        // Clear visual mode when leaving output
+        // Clear mouse selection when leaving output
         if self.focus != FocusPane::Output {
-            self.visual_mode = false;
-            self.selection_start = None;
-            self.selection_end = None;
+            self.clear_mouse_selection();
             self.pending_g = false;
         }
     }
 
-    /// Check if there is terminal output to display (either active PTY or history)
+    /// Check if there is terminal output to display for the currently selected function.
+    /// Returns true if the selected function has a running PTY or completed history.
     pub fn has_terminal_output(&self) -> bool {
+        let selected = self.selected_function();
+        // Check if there's a running PTY for the selected function
         if self.pty_handle.is_some() {
-            return true;
+            if let (Some(ref active), Some(ref sel)) = (&self.active_function, &selected) {
+                if active.name == sel.name && active.script_type == sel.script_type {
+                    return true;
+                }
+            }
         }
-        // Check if the currently selected function has history
-        if let Some(ref func) = self.active_function {
+        // Check if the selected function has history
+        if let Some(ref func) = selected {
             if self.command_history.get(func).is_some() {
                 return true;
             }
         }
-        // Legacy output support
-        !self.output.is_empty()
+        false
     }
 
-    /// Get the execution status for the current target (active PTY or history)
+    /// Get the execution status for the currently selected function
     pub fn current_execution_status(&self) -> ExecutionStatus {
+        let selected = self.selected_function();
+        // If there's a running PTY and it belongs to the selected function, return its status
         if let Some(ref handle) = self.pty_handle {
-            return handle.poll_status();
+            if let (Some(ref active), Some(ref sel)) = (&self.active_function, &selected) {
+                if active.name == sel.name && active.script_type == sel.script_type {
+                    return handle.poll_status();
+                }
+            }
         }
-        if let Some(ref func) = self.active_function {
+        // Check history for the selected function
+        if let Some(ref func) = selected {
             if let Some(state) = self.command_history.get(func) {
                 return state.status;
             }
@@ -214,19 +230,24 @@ impl App {
         }
     }
 
-    /// Get the total number of scrollable lines in the current terminal output
+    /// Get the total number of scrollable lines in the terminal output for the selected function
     pub fn terminal_total_lines(&self) -> usize {
+        let selected = self.selected_function();
+        // Check running PTY if it belongs to the selected function
         if let Some(ref handle) = self.pty_handle {
-            crate::ui::terminal_widget::total_content_lines(&handle.parser)
-        } else if let Some(ref func) = self.active_function {
-            if let Some(state) = self.command_history.get(func) {
-                crate::ui::terminal_widget::total_content_lines(&state.parser)
-            } else {
-                self.output.len()
+            if let (Some(ref active), Some(ref sel)) = (&self.active_function, &selected) {
+                if active.name == sel.name && active.script_type == sel.script_type {
+                    return crate::ui::terminal_widget::total_content_lines(&handle.parser);
+                }
             }
-        } else {
-            self.output.len()
         }
+        // Check history for the selected function
+        if let Some(ref func) = selected {
+            if let Some(state) = self.command_history.get(func) {
+                return crate::ui::terminal_widget::total_content_lines(&state.parser);
+            }
+        }
+        0
     }
 
     /// Scroll output down by half a page
@@ -260,39 +281,71 @@ impl App {
         self.output_scroll = total;
     }
 
-    /// Toggle visual selection mode
-    pub fn toggle_visual_mode(&mut self) {
-        self.visual_mode = !self.visual_mode;
-        if self.visual_mode {
-            // Start selection at current cursor position (middle of screen)
-            let cursor_pos = (0, 0);
-            self.selection_start = Some(cursor_pos);
-            self.selection_end = Some(cursor_pos);
-        } else {
-            self.selection_start = None;
-            self.selection_end = None;
+    /// Clear any active mouse selection
+    pub fn clear_mouse_selection(&mut self) {
+        self.mouse_selecting = false;
+        self.mouse_sel_start = None;
+        self.mouse_sel_end = None;
+    }
+
+    /// Start a mouse drag selection at the given terminal-relative (row, col)
+    pub fn start_mouse_selection(&mut self, row: usize, col: usize) {
+        self.mouse_selecting = true;
+        self.mouse_sel_start = Some((row, col));
+        self.mouse_sel_end = Some((row, col));
+    }
+
+    /// Update the mouse drag selection end position
+    pub fn update_mouse_selection(&mut self, row: usize, col: usize) {
+        if self.mouse_selecting {
+            self.mouse_sel_end = Some((row, col));
         }
     }
 
-    /// Copy selected text to clipboard
-    pub fn yank_selection(&mut self) {
-        if !self.visual_mode {
-            return;
+    /// Finish mouse selection and copy selected text to clipboard.
+    /// Returns true if text was copied.
+    pub fn finish_mouse_selection(&mut self) -> bool {
+        if !self.mouse_selecting {
+            return false;
+        }
+        self.mouse_selecting = false;
+
+        let start = match self.mouse_sel_start {
+            Some(s) => s,
+            None => return false,
+        };
+        let end = match self.mouse_sel_end {
+            Some(e) => e,
+            None => return false,
+        };
+
+        // Don't copy if start == end (just a click, no drag)
+        if start == end {
+            self.clear_mouse_selection();
+            return false;
         }
 
-        let start = match self.selection_start {
-            Some(s) => s,
-            None => return,
-        };
-        let end = match self.selection_end {
-            Some(e) => e,
-            None => return,
-        };
-
         let scroll_offset = self.output_scroll;
+        let selected = self.selected_function();
+
         let text = if let Some(ref handle) = self.pty_handle {
-            crate::ui::terminal_widget::get_selected_text(&handle.parser, scroll_offset, start, end)
-        } else if let Some(ref func) = self.active_function {
+            let is_selected =
+                if let (Some(ref active), Some(ref sel)) = (&self.active_function, &selected) {
+                    active.name == sel.name && active.script_type == sel.script_type
+                } else {
+                    false
+                };
+            if is_selected {
+                crate::ui::terminal_widget::get_selected_text(
+                    &handle.parser,
+                    scroll_offset,
+                    start,
+                    end,
+                )
+            } else {
+                String::new()
+            }
+        } else if let Some(ref func) = selected {
             if let Some(state) = self.command_history.get(func) {
                 crate::ui::terminal_widget::get_selected_text(
                     &state.parser,
@@ -308,13 +361,17 @@ impl App {
         };
 
         if !text.is_empty() {
-            let _ = clipboard_anywhere::set_clipboard(&text);
+            // Use OSC 52 escape sequence to set the system clipboard via the terminal.
+            // Format: ESC ] 52 ; c ; <base64-encoded-text> BEL
+            use base64::Engine;
+            let encoded = base64::engine::general_purpose::STANDARD.encode(&text);
+            let osc = format!("\x1b]52;c;{}\x07", encoded);
+            let _ = std::io::Write::write_all(&mut std::io::stdout(), osc.as_bytes());
+            let _ = std::io::Write::flush(&mut std::io::stdout());
         }
 
-        // Exit visual mode after yanking
-        self.visual_mode = false;
-        self.selection_start = None;
-        self.selection_end = None;
+        // Keep selection visible (don't clear highlight yet — cleared on next click)
+        true
     }
 
     pub fn toggle_info(&mut self) {
@@ -505,11 +562,35 @@ impl App {
         items.get(self.selected_index).cloned()
     }
 
+    /// Get the ScriptFunction for the currently selected tree item (if a function is selected).
+    /// For "Frequently Used" entries, returns a copy with the original category
+    /// so that CommandHistory lookups match the key used at execution time.
+    pub fn selected_function(&self) -> Option<ScriptFunction> {
+        if let Some(TreeItem::Function(func)) = self.selected_item() {
+            if func.category == FREQUENTLY_USED_CATEGORY {
+                // Find the original function to get the real category
+                self.functions
+                    .iter()
+                    .find(|f| f.name == func.name && f.script_type == func.script_type)
+                    .cloned()
+            } else {
+                Some(func)
+            }
+        } else {
+            None
+        }
+    }
+
     pub fn next(&mut self) {
         let item_count = self.tree_items().len();
 
         if item_count > 0 {
+            let old_index = self.selected_index;
             self.selected_index = (self.selected_index + 1) % item_count;
+            if self.selected_index != old_index {
+                self.output_scroll = 0;
+                self.clear_mouse_selection();
+            }
         }
     }
 
@@ -517,10 +598,15 @@ impl App {
         let item_count = self.tree_items().len();
 
         if item_count > 0 {
+            let old_index = self.selected_index;
             if self.selected_index > 0 {
                 self.selected_index -= 1;
             } else {
                 self.selected_index = item_count - 1;
+            }
+            if self.selected_index != old_index {
+                self.output_scroll = 0;
+                self.clear_mouse_selection();
             }
         }
     }
@@ -633,7 +719,7 @@ mod tests {
         assert_eq!(app.project_title, "Test");
         assert!(app.pty_handle.is_none());
         assert!(app.active_function.is_none());
-        assert!(!app.visual_mode);
+        assert!(!app.mouse_selecting);
     }
 
     #[test]
@@ -708,9 +794,7 @@ mod tests {
 
         assert_eq!(app.focus, FocusPane::ScriptList);
 
-        app.toggle_focus();
-        assert_eq!(app.focus, FocusPane::Details);
-
+        // No terminal output, so toggle stays on ScriptList
         app.toggle_focus();
         assert_eq!(app.focus, FocusPane::ScriptList);
     }
@@ -720,13 +804,24 @@ mod tests {
         let functions = create_test_functions();
         let mut app = App::new(functions, "Test".to_string());
 
-        // Add some output
-        app.output.push("Test output".to_string());
+        // Expand a category and select a function
+        app.expand_category("System");
+        app.selected_index = 1; // First function under "System"
+
+        // Add a command history entry for the selected function
+        let func = app.selected_function().unwrap();
+        let state = crate::ui::pty_runner::ExecutionState {
+            status: ExecutionStatus::Succeeded,
+            parser: std::sync::Arc::new(std::sync::Mutex::new(vt100::Parser::new(24, 80, 100))),
+            exit_code: Some(0),
+            started_at: Instant::now(),
+            finished_at: Some(Instant::now()),
+            display_name: func.display_name.clone(),
+            category: func.category.clone(),
+        };
+        app.command_history.insert(&func, state);
 
         assert_eq!(app.focus, FocusPane::ScriptList);
-
-        app.toggle_focus();
-        assert_eq!(app.focus, FocusPane::Details);
 
         app.toggle_focus();
         assert_eq!(app.focus, FocusPane::Output);
@@ -766,17 +861,12 @@ mod tests {
         let functions = create_test_functions();
         let mut app = App::new(functions, "Test".to_string());
 
-        // Add multiple output lines
-        for i in 0..10 {
-            app.output.push(format!("Line {}", i));
-        }
-
         assert_eq!(app.output_scroll, 0);
 
-        app.scroll_output_up();
-        assert_eq!(app.output_scroll, 1);
+        // Manually set scroll to test scroll_down behavior
+        app.output_scroll = 3;
 
-        app.scroll_output_up();
+        app.scroll_output_down();
         assert_eq!(app.output_scroll, 2);
 
         app.scroll_output_down();
@@ -975,35 +1065,40 @@ mod tests {
     }
 
     #[test]
-    fn test_app_visual_mode() {
+    fn test_app_mouse_selection() {
         let functions = create_test_functions();
         let mut app = App::new(functions, "Test".to_string());
 
-        assert!(!app.visual_mode);
+        assert!(!app.mouse_selecting);
 
-        app.toggle_visual_mode();
-        assert!(app.visual_mode);
-        assert!(app.selection_start.is_some());
-        assert!(app.selection_end.is_some());
+        app.start_mouse_selection(0, 0);
+        assert!(app.mouse_selecting);
+        assert_eq!(app.mouse_sel_start, Some((0, 0)));
+        assert_eq!(app.mouse_sel_end, Some((0, 0)));
 
-        app.toggle_visual_mode();
-        assert!(!app.visual_mode);
-        assert!(app.selection_start.is_none());
-        assert!(app.selection_end.is_none());
+        app.update_mouse_selection(2, 5);
+        assert_eq!(app.mouse_sel_end, Some((2, 5)));
+
+        app.clear_mouse_selection();
+        assert!(!app.mouse_selecting);
+        assert!(app.mouse_sel_start.is_none());
+        assert!(app.mouse_sel_end.is_none());
     }
 
     #[test]
-    fn test_app_focus_clears_visual_mode() {
+    fn test_app_focus_clears_mouse_selection() {
         let functions = create_test_functions();
         let mut app = App::new(functions, "Test".to_string());
 
-        app.visual_mode = true;
-        app.selection_start = Some((0, 0));
-        app.selection_end = Some((1, 5));
+        app.mouse_selecting = true;
+        app.mouse_sel_start = Some((0, 0));
+        app.mouse_sel_end = Some((1, 5));
 
-        // Focus is ScriptList -> Details (should clear visual mode since not Output)
-        app.toggle_focus();
-        assert!(!app.visual_mode);
-        assert!(app.selection_start.is_none());
+        // Focus is ScriptList -> stays ScriptList (no terminal output)
+        // but let's test that clearing works when focus != Output
+        app.focus = FocusPane::Output;
+        app.toggle_focus(); // Output -> ScriptList
+        assert!(!app.mouse_selecting);
+        assert!(app.mouse_sel_start.is_none());
     }
 }

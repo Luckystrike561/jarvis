@@ -49,8 +49,7 @@
 //! - `Ctrl+d` / `Ctrl+u` - Scroll down/up by half page
 //! - `G` - Jump to bottom
 //! - `gg` - Jump to top
-//! - `v` - Enter visual selection mode
-//! - `y` - Yank (copy) selected text to clipboard
+//! - Mouse drag - Select text and copy to clipboard on release
 //! - `Esc` / `q` - Return focus to left panel
 //! - `Tab` - Switch pane
 
@@ -62,7 +61,10 @@ use jarvis::usage::{UsageTracker, FREQUENTLY_USED_CATEGORY, MAX_FREQUENT_COMMAND
 use anyhow::{Context, Result};
 use clap::Parser;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers,
+        MouseButton, MouseEventKind,
+    },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -128,7 +130,7 @@ async fn main() -> Result<()> {
     panic::set_hook(Box::new(move |panic_info| {
         // Try to restore terminal state
         let _ = disable_raw_mode();
-        let _ = execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture);
+        let _ = execute!(io::stdout(), DisableMouseCapture, LeaveAlternateScreen);
 
         // Call the original panic hook
         original_hook(panic_info);
@@ -564,8 +566,8 @@ fn cleanup_terminal(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Re
 
     execute!(
         terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
+        DisableMouseCapture,
+        LeaveAlternateScreen
     )
     .context("Failed to restore terminal")?;
 
@@ -577,7 +579,6 @@ fn cleanup_terminal(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crossterm::event::KeyEvent;
     use std::collections::VecDeque;
 
     /// Mock event reader for testing that returns a predetermined sequence of events
@@ -784,10 +785,9 @@ fn execute_inline(
         app.finalize_pty();
 
         // Calculate PTY size from the right panel area
-        // The right panel is roughly 60% width, with 70% height for output
-        // minus border characters
-        let cols = (terminal_size.0 * 60 / 100).saturating_sub(2).max(40);
-        let rows = (terminal_size.1 * 70 / 100).saturating_sub(4).max(10);
+        // Right panel is 80% width, full height minus header (3), footer (1), and borders (2)
+        let cols = (terminal_size.0 * 80 / 100).saturating_sub(2).max(40);
+        let rows = terminal_size.1.saturating_sub(6).max(10);
 
         // Spawn the command in a PTY
         let handle =
@@ -838,6 +838,60 @@ fn execute_inline(
     }
 
     Ok(())
+}
+
+/// Convert a crossterm KeyEvent into the byte sequence to send to a PTY.
+/// This handles regular characters, control characters, and special keys.
+fn key_event_to_bytes(key: &KeyEvent) -> Vec<u8> {
+    let has_ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+
+    match key.code {
+        KeyCode::Char(c) => {
+            if has_ctrl {
+                // Ctrl+A = 0x01, Ctrl+B = 0x02, ..., Ctrl+Z = 0x1A
+                let ctrl_byte = (c.to_ascii_lowercase() as u8).wrapping_sub(b'a').wrapping_add(1);
+                if ctrl_byte <= 26 {
+                    vec![ctrl_byte]
+                } else {
+                    vec![]
+                }
+            } else {
+                let mut buf = [0u8; 4];
+                let s = c.encode_utf8(&mut buf);
+                s.as_bytes().to_vec()
+            }
+        }
+        KeyCode::Enter => vec![b'\r'],
+        KeyCode::Backspace => vec![0x7f],
+        KeyCode::Delete => b"\x1b[3~".to_vec(),
+        KeyCode::Up => b"\x1b[A".to_vec(),
+        KeyCode::Down => b"\x1b[B".to_vec(),
+        KeyCode::Right => b"\x1b[C".to_vec(),
+        KeyCode::Left => b"\x1b[D".to_vec(),
+        KeyCode::Home => b"\x1b[H".to_vec(),
+        KeyCode::End => b"\x1b[F".to_vec(),
+        KeyCode::PageUp => b"\x1b[5~".to_vec(),
+        KeyCode::PageDown => b"\x1b[6~".to_vec(),
+        KeyCode::Tab => vec![b'\t'],
+        KeyCode::Esc => vec![0x1b],
+        KeyCode::Insert => b"\x1b[2~".to_vec(),
+        KeyCode::F(n) => match n {
+            1 => b"\x1bOP".to_vec(),
+            2 => b"\x1bOQ".to_vec(),
+            3 => b"\x1bOR".to_vec(),
+            4 => b"\x1bOS".to_vec(),
+            5 => b"\x1b[15~".to_vec(),
+            6 => b"\x1b[17~".to_vec(),
+            7 => b"\x1b[18~".to_vec(),
+            8 => b"\x1b[19~".to_vec(),
+            9 => b"\x1b[20~".to_vec(),
+            10 => b"\x1b[21~".to_vec(),
+            11 => b"\x1b[23~".to_vec(),
+            12 => b"\x1b[24~".to_vec(),
+            _ => vec![],
+        },
+        _ => vec![],
+    }
 }
 
 async fn run_app(
@@ -945,77 +999,91 @@ async fn run_app(
                     _ => {}
                 }
             } else if app.focus == ui::app::FocusPane::Output {
-                // Output pane keybindings (Neovim-style)
+                // Output pane keybindings
                 let has_ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
 
-                match key.code {
-                    KeyCode::Char('q') | KeyCode::Esc => {
-                        // Return focus to script list (don't quit)
-                        app.focus = ui::app::FocusPane::ScriptList;
-                        app.visual_mode = false;
-                        app.selection_start = None;
-                        app.selection_end = None;
-                        app.pending_g = false;
-                    }
-                    KeyCode::Tab => {
-                        app.toggle_focus();
-                    }
-                    KeyCode::Char('j') | KeyCode::Down => {
-                        if app.visual_mode {
-                            // Move selection end down
-                            if let Some(ref mut end) = app.selection_end {
-                                end.0 += 1;
-                            }
-                        }
-                        app.scroll_output_down();
-                    }
-                    KeyCode::Char('k') | KeyCode::Up => {
-                        if app.visual_mode {
-                            // Move selection end up
-                            if let Some(ref mut end) = app.selection_end {
-                                end.0 = end.0.saturating_sub(1);
-                            }
-                        }
-                        app.scroll_output_up();
-                    }
-                    KeyCode::Char('d') if has_ctrl => {
-                        let size = terminal.size()?;
-                        let visible = size.height.saturating_sub(8) as usize;
-                        app.scroll_output_half_page_down(visible);
-                    }
-                    KeyCode::Char('u') if has_ctrl => {
-                        let size = terminal.size()?;
-                        let visible = size.height.saturating_sub(8) as usize;
-                        app.scroll_output_half_page_up(visible);
-                    }
-                    KeyCode::Char('G') => {
-                        // Jump to bottom
-                        app.scroll_output_to_bottom();
-                        app.pending_g = false;
-                    }
-                    KeyCode::Char('g') => {
-                        if app.pending_g {
-                            // gg: jump to top
-                            app.scroll_output_to_top();
+                // Check if a PTY is running AND the selected function is the one running
+                let selected = app.selected_function();
+                let is_running = if let (Some(ref handle), Some(ref active), Some(ref sel)) =
+                    (&app.pty_handle, &app.active_function, &selected)
+                {
+                    active.name == sel.name
+                        && active.script_type == sel.script_type
+                        && handle.poll_status() == ui::pty_runner::ExecutionStatus::Running
+                } else {
+                    false
+                };
+
+                if is_running {
+                    // --- Interactive PTY mode: forward input to the running process ---
+                    // Only Esc and Tab are reserved for TUI navigation
+                    match key.code {
+                        KeyCode::Esc => {
+                            app.focus = ui::app::FocusPane::ScriptList;
+                            app.clear_mouse_selection();
                             app.pending_g = false;
-                        } else {
-                            app.pending_g = true;
+                        }
+                        KeyCode::Tab if !has_ctrl => {
+                            app.toggle_focus();
+                        }
+                        _ => {
+                            // Forward the key to the PTY
+                            if let Some(ref handle) = app.pty_handle {
+                                let bytes = key_event_to_bytes(&key);
+                                if !bytes.is_empty() {
+                                    let _ = handle.write_input(&bytes);
+                                }
+                            }
                         }
                     }
-                    KeyCode::Char('v') => {
-                        app.toggle_visual_mode();
-                        app.pending_g = false;
-                    }
-                    KeyCode::Char('y') => {
-                        app.yank_selection();
-                        app.pending_g = false;
-                    }
-                    KeyCode::Char('i') => {
-                        app.toggle_info();
-                        app.pending_g = false;
-                    }
-                    _ => {
-                        app.pending_g = false;
+                } else {
+                    // --- Scroll/review mode: command finished, navigate output ---
+                    let size = terminal.size()?;
+                    let visible_height = size.height.saturating_sub(6) as usize;
+
+                    match key.code {
+                        KeyCode::Char('q') | KeyCode::Esc => {
+                            // Return focus to script list (don't quit)
+                            app.focus = ui::app::FocusPane::ScriptList;
+                            app.clear_mouse_selection();
+                            app.pending_g = false;
+                        }
+                        KeyCode::Tab => {
+                            app.toggle_focus();
+                        }
+                        KeyCode::Char('j') | KeyCode::Down => {
+                            app.scroll_output_down();
+                            app.pending_g = false;
+                        }
+                        KeyCode::Char('k') | KeyCode::Up => {
+                            app.scroll_output_up();
+                            app.pending_g = false;
+                        }
+                        KeyCode::Char('d') if has_ctrl => {
+                            app.scroll_output_half_page_down(visible_height);
+                        }
+                        KeyCode::Char('u') if has_ctrl => {
+                            app.scroll_output_half_page_up(visible_height);
+                        }
+                        KeyCode::Char('G') => {
+                            app.scroll_output_to_bottom();
+                            app.pending_g = false;
+                        }
+                        KeyCode::Char('g') => {
+                            if app.pending_g {
+                                app.scroll_output_to_top();
+                                app.pending_g = false;
+                            } else {
+                                app.pending_g = true;
+                            }
+                        }
+                        KeyCode::Char('i') => {
+                            app.toggle_info();
+                            app.pending_g = false;
+                        }
+                        _ => {
+                            app.pending_g = false;
+                        }
                     }
                 }
             } else {
@@ -1072,6 +1140,45 @@ async fn run_app(
                     }
                     _ => {}
                 }
+            }
+        }
+
+        // Handle mouse events for text selection in the output pane
+        if let Event::Mouse(mouse) = event {
+            match mouse.kind {
+                MouseEventKind::Down(MouseButton::Left) => {
+                    if let Some((area_x, area_y, area_w, area_h)) = app.output_inner_area {
+                        let mx = mouse.column;
+                        let my = mouse.row;
+                        if mx >= area_x
+                            && mx < area_x + area_w
+                            && my >= area_y
+                            && my < area_y + area_h
+                        {
+                            let rel_col = (mx - area_x) as usize;
+                            let rel_row = (my - area_y) as usize;
+                            app.start_mouse_selection(rel_row, rel_col);
+                        } else {
+                            app.clear_mouse_selection();
+                        }
+                    } else {
+                        app.clear_mouse_selection();
+                    }
+                }
+                MouseEventKind::Drag(MouseButton::Left) => {
+                    if let Some((area_x, area_y, area_w, area_h)) = app.output_inner_area {
+                        // Clamp to output area bounds
+                        let mx = mouse.column.max(area_x).min(area_x + area_w - 1);
+                        let my = mouse.row.max(area_y).min(area_y + area_h - 1);
+                        let rel_col = (mx - area_x) as usize;
+                        let rel_row = (my - area_y) as usize;
+                        app.update_mouse_selection(rel_row, rel_col);
+                    }
+                }
+                MouseEventKind::Up(MouseButton::Left) => {
+                    app.finish_mouse_selection();
+                }
+                _ => {}
             }
         }
 

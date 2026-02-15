@@ -46,7 +46,7 @@ fn vt100_color_to_ratatui(color: vt100::Color) -> Option<Color> {
 pub struct TerminalView<'a> {
     parser: &'a Arc<Mutex<vt100::Parser>>,
     scroll_offset: usize,
-    /// Whether visual selection mode is active
+    /// Whether a selection is active (mouse drag)
     selection_active: bool,
     selection_start: Option<(usize, usize)>,
     selection_end: Option<(usize, usize)>,
@@ -175,9 +175,9 @@ impl Widget for TerminalView<'_> {
                             style = style.add_modifier(Modifier::REVERSED);
                         }
 
-                        // Apply selection highlight
+                        // Apply selection highlight (mouse drag)
                         if self.is_selected(display_y, display_x) {
-                            style = style.bg(Color::Blue).fg(Color::White);
+                            style = style.bg(Color::Rgb(60, 60, 80));
                         }
 
                         cells.push((buf_x, buf_y, ch.to_string(), style));
