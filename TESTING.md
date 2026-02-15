@@ -7,7 +7,7 @@ This guide covers both manual TUI testing and automated unit/integration tests.
 ### Running Tests
 
 ```bash
-# Run all 289 tests
+# Run all 306 tests
 cargo test
 
 # Run specific test
@@ -24,7 +24,7 @@ devbox run test
 
 Jarvis has comprehensive test coverage across all modules:
 
-- **289 total tests** covering ~90% of testable code
+- **306 total tests** covering ~90% of testable code
 - **Unit tests** for script discovery, parsing, npm parsing, PTY execution, and terminal widget
 - **Integration tests** for application logic and edge cases
 - **Mock-based tests** for TUI event handling and key input processing
@@ -134,6 +134,6 @@ go install github.com/charmbracelet/gum@latest
 
 **All manual TUI tests pass** = Interactive input support is working correctly! 🎉
 
-**All 289 automated tests pass** = Code quality and functionality are maintained! 🎉
+**All 306 automated tests pass** = Code quality and functionality are maintained! 🎉
 
 The key indicator for manual testing is: **You can type into gum prompts and see your input.**

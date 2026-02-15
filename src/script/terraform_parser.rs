@@ -11,6 +11,9 @@
 //! 1. **Common commands** — `init`, `plan`, `apply`, `destroy`, `validate`, `fmt`
 //! 2. **Workspace commands** — `workspace select <name>` for each workspace
 //!    discovered via `terraform workspace list` (or `tofu workspace list`)
+//! 3. **Targeted commands** — `plan --target=<addr>`, `apply --target=<addr>`,
+//!    and `destroy --target=<addr>` for each `resource`, `module`, and `data`
+//!    block found in `.tf` files
 //!
 //! ## Binary Resolution
 //!
@@ -24,11 +27,13 @@
 //! ## Key Types
 //!
 //! - [`TerraformCommand`] — Represents a Terraform command with display metadata
-//! - [`TerraformCommandType`] — Distinguishes between common commands and
-//!   workspace commands
+//! - [`TerraformCommandType`] — Distinguishes between common, workspace, and
+//!   targeted commands
 //! - [`is_terraform_available`] — Checks if `terraform` or `tofu` is installed
 //! - [`resolve_terraform_binary`] — Returns the resolved binary name
 //! - [`list_commands`] — Main entry point to list all Terraform commands
+//! - [`parse_tf_resource_addresses`] — Extract resource addresses from `.tf` content
+//! - [`discover_resource_addresses`] — Scan a directory for targetable resources
 //!
 //! ## CLI Integration
 //!
@@ -45,12 +50,14 @@
 //! Commands are executed based on their type:
 //! - Common commands: `<binary> <command>` (e.g., `terraform plan` or `tofu plan`)
 //! - Workspace selection: `<binary> workspace select <name>`
+//! - Targeted commands: `<binary> <cmd> --target=<addr>` (e.g., `terraform apply --target=aws_instance.web`)
 //!
 //! ## Availability Caching
 //!
 //! The resolved binary name is cached using [`OnceLock`] to avoid repeated
 //! process spawning during discovery.
 
+use std::fs;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
@@ -70,6 +77,8 @@ pub enum TerraformCommandType {
     Common,
     /// A workspace selection command (`terraform workspace select <name>`)
     Workspace,
+    /// A targeted command (`terraform plan --target=<addr>`, etc.)
+    Targeted,
 }
 
 /// Terraform command item for TUI display
@@ -148,6 +157,118 @@ fn build_common_commands(category: &str) -> Vec<TerraformCommand> {
         .collect()
 }
 
+/// Commands that support `--target` for resource-level operations.
+const TARGETABLE_COMMANDS: &[(&str, &str)] = &[
+    ("plan", "Plan changes for"),
+    ("apply", "Apply changes to"),
+    ("destroy", "Destroy"),
+];
+
+/// Parse a single `.tf` file's contents and extract resource addresses.
+///
+/// Recognises three block types:
+/// - `resource "type" "name"` → `type.name`
+/// - `module "name"` → `module.name`
+/// - `data "type" "name"` → `data.type.name`
+///
+/// Only top-level blocks are matched (the keyword must appear at the start of a
+/// line, ignoring leading whitespace). Quoted strings are expected around each
+/// identifier.
+pub fn parse_tf_resource_addresses(content: &str) -> Vec<String> {
+    let mut addresses = Vec::new();
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+
+        if let Some(rest) = trimmed.strip_prefix("resource ") {
+            // resource "type" "name"
+            if let Some(addr) = parse_two_labels(rest) {
+                addresses.push(addr);
+            }
+        } else if let Some(rest) = trimmed.strip_prefix("module ") {
+            // module "name"
+            if let Some(name) = parse_one_label(rest) {
+                addresses.push(format!("module.{name}"));
+            }
+        } else if let Some(rest) = trimmed.strip_prefix("data ") {
+            // data "type" "name"
+            if let Some(addr) = parse_two_labels(rest) {
+                addresses.push(format!("data.{addr}"));
+            }
+        }
+    }
+
+    addresses
+}
+
+/// Extract two quoted labels from a string like `"aws_instance" "web" {`
+/// and return `"aws_instance.web"`.
+fn parse_two_labels(s: &str) -> Option<String> {
+    let first_end = parse_one_label(s)?;
+    // Skip past the first quoted label to find the second one
+    let after_first = s.find('"')? + 1; // start of first label content
+    let close_first = after_first + s[after_first..].find('"')?; // end of first label
+    let rest = &s[close_first + 1..];
+    let second = parse_one_label(rest)?;
+    Some(format!("{first_end}.{second}"))
+}
+
+/// Extract a single quoted label from a string like `"web" {` → `"web"`.
+fn parse_one_label(s: &str) -> Option<String> {
+    let start = s.find('"')? + 1;
+    let end = start + s[start..].find('"')?;
+    let label = &s[start..end];
+    if label.is_empty() {
+        return None;
+    }
+    Some(label.to_string())
+}
+
+/// Scan a directory for `.tf` files and collect all resource addresses.
+pub fn discover_resource_addresses(tf_dir: &Path) -> Vec<String> {
+    let mut addresses = Vec::new();
+
+    let entries = match fs::read_dir(tf_dir) {
+        Ok(entries) => entries,
+        Err(_) => return addresses,
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) == Some("tf") {
+            if let Ok(content) = fs::read_to_string(&path) {
+                addresses.extend(parse_tf_resource_addresses(&content));
+            }
+        }
+    }
+
+    addresses.sort();
+    addresses.dedup();
+    addresses
+}
+
+/// Build targeted commands (`plan --target=...`, `apply --target=...`, etc.)
+/// for each resource address.
+fn build_targeted_commands(addresses: &[String], category: &str) -> Vec<TerraformCommand> {
+    let mut commands = Vec::new();
+
+    for addr in addresses {
+        for (cmd, verb) in TARGETABLE_COMMANDS {
+            commands.push(TerraformCommand {
+                name: format!("{cmd} --target={addr}"),
+                display_name: format!("{} --target={}", format_display_name(cmd), addr),
+                category: category.to_string(),
+                description: format!("{verb} {addr}"),
+                emoji: Some("\u{1f3af}".to_string()), // 🎯
+                ignored: false,
+                command_type: TerraformCommandType::Targeted,
+            });
+        }
+    }
+
+    commands
+}
+
 /// Parse the output of `terraform workspace list`.
 ///
 /// The output format is one workspace per line, with the active workspace
@@ -192,13 +313,15 @@ fn build_workspace_commands(workspaces: &[String], category: &str) -> Vec<Terraf
         .collect()
 }
 
-/// Parse workspace list output and combine with common commands.
+/// Parse workspace list output, combine with common commands, and add targeted
+/// commands for discovered resources.
 ///
 /// This is the testable core — it takes the raw `terraform workspace list`
-/// output (or `None` if workspace listing failed/was skipped) and produces
-/// the full list of [`TerraformCommand`]s.
+/// output (or `None` if workspace listing failed/was skipped) and a list of
+/// resource addresses, then produces the full list of [`TerraformCommand`]s.
 pub fn parse_terraform_commands(
     workspace_output: Option<&str>,
+    resource_addresses: &[String],
     category: &str,
 ) -> Vec<TerraformCommand> {
     let mut commands = build_common_commands(category);
@@ -212,6 +335,10 @@ pub fn parse_terraform_commands(
         }
     }
 
+    if !resource_addresses.is_empty() {
+        commands.extend(build_targeted_commands(resource_addresses, category));
+    }
+
     commands
 }
 
@@ -219,7 +346,8 @@ pub fn parse_terraform_commands(
 ///
 /// This runs `<binary> workspace list` (where `<binary>` is `terraform` or
 /// `tofu`) to discover workspaces (if the directory has been initialized),
-/// then combines them with the standard set of common commands.
+/// scans `.tf` files for resource/module/data blocks to generate targeted
+/// commands, then combines them with the standard set of common commands.
 pub fn list_commands(tf_dir: &Path, category: &str) -> Result<Vec<TerraformCommand>> {
     let binary = resolve_binary().context("Neither 'terraform' nor 'tofu' binary is available")?;
 
@@ -245,7 +373,14 @@ pub fn list_commands(tf_dir: &Path, category: &str) -> Result<Vec<TerraformComma
         None
     };
 
-    Ok(parse_terraform_commands(ws_str.as_deref(), category))
+    // Discover resource addresses from .tf files
+    let addresses = discover_resource_addresses(tf_dir);
+
+    Ok(parse_terraform_commands(
+        ws_str.as_deref(),
+        &addresses,
+        category,
+    ))
 }
 
 #[cfg(test)]
@@ -438,11 +573,11 @@ mod tests {
         assert_eq!(commands[0].category, "my-infra");
     }
 
-    // --- parse_terraform_commands (integration of common + workspace) ---
+    // --- parse_terraform_commands (integration of common + workspace + targeted) ---
 
     #[test]
     fn test_parse_terraform_commands_no_workspaces() {
-        let commands = parse_terraform_commands(None, "myproject");
+        let commands = parse_terraform_commands(None, &[], "myproject");
         // Should have only common commands
         assert_eq!(commands.len(), 6);
         for cmd in &commands {
@@ -454,14 +589,14 @@ mod tests {
     fn test_parse_terraform_commands_single_default_workspace() {
         // A single "default" workspace shouldn't produce workspace commands
         let ws_output = "* default\n";
-        let commands = parse_terraform_commands(Some(ws_output), "myproject");
+        let commands = parse_terraform_commands(Some(ws_output), &[], "myproject");
         assert_eq!(commands.len(), 6); // only common commands
     }
 
     #[test]
     fn test_parse_terraform_commands_multiple_workspaces() {
         let ws_output = "  default\n* staging\n  production\n";
-        let commands = parse_terraform_commands(Some(ws_output), "myproject");
+        let commands = parse_terraform_commands(Some(ws_output), &[], "myproject");
 
         // 6 common + 3 workspace = 9
         assert_eq!(commands.len(), 9);
@@ -481,7 +616,7 @@ mod tests {
 
     #[test]
     fn test_parse_terraform_commands_empty_workspace_output() {
-        let commands = parse_terraform_commands(Some(""), "myproject");
+        let commands = parse_terraform_commands(Some(""), &[], "myproject");
         // Empty output => no workspaces => only common commands
         assert_eq!(commands.len(), 6);
     }
@@ -489,7 +624,7 @@ mod tests {
     #[test]
     fn test_parse_terraform_commands_two_workspaces() {
         let ws_output = "* default\n  staging\n";
-        let commands = parse_terraform_commands(Some(ws_output), "infra");
+        let commands = parse_terraform_commands(Some(ws_output), &[], "infra");
 
         // 6 common + 2 workspace = 8
         assert_eq!(commands.len(), 8);
@@ -505,6 +640,222 @@ mod tests {
         assert!(ws_names.contains(&"workspace select staging"));
     }
 
+    #[test]
+    fn test_parse_terraform_commands_with_resources() {
+        let addrs = vec!["aws_instance.web".to_string(), "module.vpc".to_string()];
+        let commands = parse_terraform_commands(None, &addrs, "infra");
+
+        // 6 common + 2 resources * 3 targetable commands = 12
+        assert_eq!(commands.len(), 12);
+
+        let targeted: Vec<_> = commands
+            .iter()
+            .filter(|c| c.command_type == TerraformCommandType::Targeted)
+            .collect();
+        assert_eq!(targeted.len(), 6);
+    }
+
+    #[test]
+    fn test_parse_terraform_commands_workspaces_and_resources() {
+        let ws_output = "  default\n* staging\n";
+        let addrs = vec!["local_file.hello".to_string()];
+        let commands = parse_terraform_commands(Some(ws_output), &addrs, "myproject");
+
+        // 6 common + 2 workspace + 1 resource * 3 targeted = 11
+        assert_eq!(commands.len(), 11);
+    }
+
+    // --- parse_tf_resource_addresses ---
+
+    #[test]
+    fn test_parse_tf_resource_addresses_resource() {
+        let content = r#"
+resource "aws_instance" "web" {
+  ami           = "ami-123456"
+  instance_type = "t2.micro"
+}
+"#;
+        let addrs = parse_tf_resource_addresses(content);
+        assert_eq!(addrs, vec!["aws_instance.web"]);
+    }
+
+    #[test]
+    fn test_parse_tf_resource_addresses_module() {
+        let content = r#"
+module "vpc" {
+  source = "./modules/vpc"
+}
+"#;
+        let addrs = parse_tf_resource_addresses(content);
+        assert_eq!(addrs, vec!["module.vpc"]);
+    }
+
+    #[test]
+    fn test_parse_tf_resource_addresses_data() {
+        let content = r#"
+data "aws_ami" "latest" {
+  most_recent = true
+}
+"#;
+        let addrs = parse_tf_resource_addresses(content);
+        assert_eq!(addrs, vec!["data.aws_ami.latest"]);
+    }
+
+    #[test]
+    fn test_parse_tf_resource_addresses_multiple() {
+        let content = r#"
+resource "local_file" "hello" {
+  content  = "hello"
+  filename = "hello.txt"
+}
+
+resource "null_resource" "echo" {
+  provisioner "local-exec" {
+    command = "echo hello"
+  }
+}
+
+module "networking" {
+  source = "./networking"
+}
+
+data "aws_caller_identity" "current" {}
+"#;
+        let addrs = parse_tf_resource_addresses(content);
+        assert_eq!(
+            addrs,
+            vec![
+                "local_file.hello",
+                "null_resource.echo",
+                "module.networking",
+                "data.aws_caller_identity.current",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_parse_tf_resource_addresses_empty() {
+        let content = r#"
+terraform {
+  required_version = ">= 1.0"
+}
+
+variable "name" {
+  type = string
+}
+
+output "result" {
+  value = var.name
+}
+"#;
+        let addrs = parse_tf_resource_addresses(content);
+        assert!(addrs.is_empty());
+    }
+
+    #[test]
+    fn test_parse_tf_resource_addresses_indented() {
+        // Indented blocks should still be matched (trim handles this)
+        let content = "  resource \"aws_s3_bucket\" \"my_bucket\" {\n  }\n";
+        let addrs = parse_tf_resource_addresses(content);
+        assert_eq!(addrs, vec!["aws_s3_bucket.my_bucket"]);
+    }
+
+    #[test]
+    fn test_parse_tf_resource_addresses_no_braces_on_same_line() {
+        // Opening brace on next line
+        let content = "resource \"aws_instance\" \"main\"\n{\n  ami = \"abc\"\n}\n";
+        let addrs = parse_tf_resource_addresses(content);
+        assert_eq!(addrs, vec!["aws_instance.main"]);
+    }
+
+    #[test]
+    fn test_parse_tf_resource_addresses_comments_ignored() {
+        // A comment containing "resource" should not match (it won't start with resource after trim)
+        let content = "# resource \"fake\" \"thing\" {}\nresource \"real\" \"item\" {\n}\n";
+        let addrs = parse_tf_resource_addresses(content);
+        assert_eq!(addrs, vec!["real.item"]);
+    }
+
+    #[test]
+    fn test_parse_tf_resource_addresses_empty_labels() {
+        // Empty quoted labels should be skipped
+        let content = "resource \"\" \"name\" {}\n";
+        let addrs = parse_tf_resource_addresses(content);
+        assert!(addrs.is_empty());
+    }
+
+    // --- parse_one_label / parse_two_labels ---
+
+    #[test]
+    fn test_parse_one_label() {
+        assert_eq!(parse_one_label("\"hello\" {"), Some("hello".to_string()));
+        assert_eq!(parse_one_label("\"vpc\""), Some("vpc".to_string()));
+        assert_eq!(parse_one_label("no quotes"), None);
+        assert_eq!(parse_one_label("\"\" {}"), None);
+    }
+
+    #[test]
+    fn test_parse_two_labels() {
+        assert_eq!(
+            parse_two_labels("\"aws_instance\" \"web\" {"),
+            Some("aws_instance.web".to_string())
+        );
+        assert_eq!(parse_two_labels("\"only_one\""), None);
+        assert_eq!(parse_two_labels("no quotes at all"), None);
+    }
+
+    // --- build_targeted_commands ---
+
+    #[test]
+    fn test_build_targeted_commands() {
+        let addrs = vec!["aws_instance.web".to_string()];
+        let commands = build_targeted_commands(&addrs, "infra");
+
+        assert_eq!(commands.len(), 3);
+
+        assert_eq!(commands[0].name, "plan --target=aws_instance.web");
+        assert_eq!(commands[0].display_name, "Plan --target=aws_instance.web");
+        assert_eq!(commands[0].description, "Plan changes for aws_instance.web");
+        assert_eq!(commands[0].command_type, TerraformCommandType::Targeted);
+        assert_eq!(commands[0].emoji, Some("\u{1f3af}".to_string())); // 🎯
+
+        assert_eq!(commands[1].name, "apply --target=aws_instance.web");
+        assert_eq!(commands[2].name, "destroy --target=aws_instance.web");
+    }
+
+    #[test]
+    fn test_build_targeted_commands_multiple_addresses() {
+        let addrs = vec!["local_file.hello".to_string(), "module.vpc".to_string()];
+        let commands = build_targeted_commands(&addrs, "infra");
+
+        // 2 addresses * 3 targetable commands = 6
+        assert_eq!(commands.len(), 6);
+
+        let names: Vec<&str> = commands.iter().map(|c| c.name.as_str()).collect();
+        assert!(names.contains(&"plan --target=local_file.hello"));
+        assert!(names.contains(&"apply --target=local_file.hello"));
+        assert!(names.contains(&"destroy --target=local_file.hello"));
+        assert!(names.contains(&"plan --target=module.vpc"));
+        assert!(names.contains(&"apply --target=module.vpc"));
+        assert!(names.contains(&"destroy --target=module.vpc"));
+    }
+
+    #[test]
+    fn test_build_targeted_commands_empty() {
+        let commands = build_targeted_commands(&[], "infra");
+        assert!(commands.is_empty());
+    }
+
+    #[test]
+    fn test_build_targeted_commands_category() {
+        let addrs = vec!["null_resource.test".to_string()];
+        let commands = build_targeted_commands(&addrs, "my-infra");
+        for cmd in &commands {
+            assert_eq!(cmd.category, "my-infra");
+            assert!(!cmd.ignored);
+        }
+    }
+
     // --- TerraformCommandType ---
 
     #[test]
@@ -514,9 +865,18 @@ mod tests {
             TerraformCommandType::Workspace,
             TerraformCommandType::Workspace
         );
+        assert_eq!(
+            TerraformCommandType::Targeted,
+            TerraformCommandType::Targeted
+        );
         assert_ne!(
             TerraformCommandType::Common,
             TerraformCommandType::Workspace
+        );
+        assert_ne!(TerraformCommandType::Common, TerraformCommandType::Targeted);
+        assert_ne!(
+            TerraformCommandType::Workspace,
+            TerraformCommandType::Targeted
         );
     }
 }

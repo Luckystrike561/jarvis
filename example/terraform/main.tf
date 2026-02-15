@@ -36,3 +36,15 @@ resource "null_resource" "echo" {
     always_run = timestamp()
   }
 }
+
+# Read the local file back as a data source (demonstrates data block targeting)
+data "local_file" "hello_content" {
+  filename = local_file.hello.filename
+}
+
+# A module reference (demonstrates module block targeting)
+# Note: This module path doesn't need to exist for Jarvis to discover the block
+module "example" {
+  source = "./modules/example"
+  name   = var.name
+}

@@ -162,7 +162,7 @@ jarvis/
 ## 🧪 Testing
 
 ```bash
-# Run all 289 tests
+# Run all 306 tests
 devbox run test
 
 # Run specific test
