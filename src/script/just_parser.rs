@@ -272,7 +272,7 @@ pub fn parse_just_list_output(
         // Use annotation description, then just comment, then default
         let description = recipe_annotations
             .and_then(|a| a.description.clone())
-            .or_else(|| comment.map(|c| c.to_string()))
+            .or_else(|| comment.map(std::string::ToString::to_string))
             .unwrap_or_else(|| format!("just recipe {}", recipe_name));
 
         let emoji = recipe_annotations.and_then(|a| a.emoji.clone());

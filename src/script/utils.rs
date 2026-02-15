@@ -10,7 +10,10 @@ pub fn is_valid_bash_identifier(name: &str) -> bool {
     }
 
     // First character must be letter or underscore
-    let first_char = name.chars().next().unwrap();
+    // Safety: we already checked `is_empty()` above, so `first` is always `Some`.
+    let Some(first_char) = name.chars().next() else {
+        return false;
+    };
     if !first_char.is_ascii_alphabetic() && first_char != '_' {
         return false;
     }

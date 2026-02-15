@@ -7,7 +7,7 @@ This guide covers both manual TUI testing and automated unit/integration tests.
 ### Running Tests
 
 ```bash
-# Run all 90 tests
+# Run all 258 tests
 cargo test
 
 # Run specific test
@@ -24,29 +24,34 @@ devbox run test
 
 Jarvis has comprehensive test coverage across all modules:
 
-- **90 total tests** covering ~90% of testable code
-- **Unit tests** for script discovery, parsing, npm parsing, and execution
+- **258 total tests** covering ~90% of testable code
+- **Unit tests** for script discovery, parsing, npm parsing, PTY execution, and terminal widget
 - **Integration tests** for application logic and edge cases
-- **Mock-based tests** for TUI event handling
+- **Mock-based tests** for TUI event handling and key input processing
 
 **Coverage Breakdown:**
 - `src/script/discovery.rs` - ~95% (script and package.json discovery)
 - `src/script/parser.rs` - ~95% (bash function parsing with annotations)
 - `src/script/npm_parser.rs` - ~90% (package.json parsing)
-- `src/script/executor.rs` - ~90% (bash and npm script execution)
+- `src/script/cargo_parser.rs` - ~90% (Cargo.toml parsing)
+- `src/script/devbox_parser.rs` - ~90% (devbox.json parsing)
+- `src/script/just_parser.rs` - ~90% (Justfile parsing)
+- `src/script/makefile_parser.rs` - ~90% (Makefile parsing)
+- `src/script/task_parser.rs` - ~90% (Taskfile.yml parsing)
+- `src/script/nx_parser.rs` - ~90% (Nx workspace parsing)
 - `src/ui/app.rs` - ~90% (application state and navigation)
-- `src/main.rs` - ~85% (integration tests)
+- `src/ui/pty_runner.rs` - ~85% (PTY execution, shell escaping, command building)
+- `src/ui/terminal_widget.rs` - ~80% (selection, scrollback, color conversion)
+- `src/main.rs` - ~85% (key event handling, integration tests)
 - `src/ui/render.rs` - ~5% (UI rendering - difficult to test)
-
-## Manual TUI Testing
 
 ## Manual TUI Testing
 
 ### Quick Start
 
 ```bash
-cd /home/luckystrike561/shield/jarvis
-./target/release/jarvis
+# From the project root, test with the example directory:
+jarvis -p example
 ```
 
 ## What to Test
@@ -58,86 +63,48 @@ cd /home/luckystrike561/shield/jarvis
 - **Q** to quit
 
 ### 2. Script Discovery ✅
-When you start Jarvis, you should see:
-- **fedora.sh** - Fedora system setup functions
-- **homelab.sh** - Homelab/K8s deployment functions
-- **test.sh** - Interactive test functions (NEW!)
-- **util.sh** - Utility functions
-- **package.json** - npm scripts (if present in example/node/)
+When you start Jarvis with `jarvis -p example`, you should see:
+- **example.sh** - Example bash functions
+- **Taskfile.yml** - Task runner targets
+- **Makefile** - Make targets
+- **package.json** - npm scripts (from example/node/)
+- **devbox.json** - Devbox scripts
 
 ### 3. Non-Interactive Execution ✅
-Navigate to: `test.sh` → `Simple echo test`
-- Should display text output
-- Press Enter to return to TUI
+Select a simple echo function from any discovered script.
+- Should display text output inline in the embedded terminal
+- Press Esc or Backspace to return to the menu
 
-### 4. Interactive gum confirm ✅ (CRITICAL TEST)
-Navigate to: `test.sh` → `Interactive gum confirm`
-- TUI should **disappear** (suspend)
-- You should see: "Do you like the Jarvis TUI?" with Yes/No buttons
-- Use arrow keys to select, press Enter
-- Should show result message
-- Press Enter to return to TUI
-- TUI should **reappear** (resume)
-
-### 5. Interactive gum input ✅ (CRITICAL TEST)
-Navigate to: `test.sh` → `Interactive gum input`
-- TUI should suspend
-- You should see: "Enter your name" input field
-- Type your name and press Enter
-- Should greet you by name
-- Press Enter to return to TUI
-
-### 6. Interactive bash read ✅ (CRITICAL TEST)
-Navigate to: `test.sh` → `Interactive read command`
-- TUI should suspend
-- You should see: "Enter your favorite color: "
-- Type a color and press Enter
-- Should confirm your choice
-- Press Enter to return to TUI
-
-### 7. Real-World Test (Optional)
-Navigate to: `homelab.sh` → `List all kubernetes resources for a namespace`
-- Should prompt with gum input for namespace
-- Type a namespace name (e.g., "default")
-- Should execute kubectl commands
-- Verify output is visible
-
-### 8. npm Scripts Test (Optional)
-If you have `example/node/package.json`:
-Navigate to: `Package` → select any npm script
-- Should execute the npm script
-- Verify output is visible
-- Press Enter to return to TUI
+### 4. Interactive Execution ✅ (CRITICAL TEST)
+Select an interactive function (e.g., one that uses `gum` or `read`).
+- The script should run in the embedded PTY terminal
+- You should be able to type input directly
+- Script output should be visible inline
+- Press Esc or Backspace to return to the menu after completion
 
 ## Expected Behavior
 
 ### ✅ Working Correctly
-- TUI suspends cleanly (screen clears, cursor visible)
+- Scripts execute in the embedded PTY terminal
 - Interactive prompts work (gum, read, etc.)
 - You can type input and see what you're typing
 - Script output is visible and readable
-- "Press Enter to continue..." appears after script finishes
-- TUI resumes cleanly after pressing Enter
-- Navigation works smoothly
+- Navigation works smoothly after returning from execution
 
 ### ❌ Issues to Watch For
-- Cannot type in gum prompts → stdin not working
-- TUI artifacts remain on screen → suspend failed
-- Cannot see script output → stdout/stderr not working
+- Cannot type in interactive prompts → PTY stdin not working
+- No script output visible → PTY rendering issue
 - Cursor not visible during prompts → terminal state issue
-- Cannot return to TUI after script → resume failed
+- Cannot return to menu after script → key handling issue
 
 ## Test Results Template
 
 ```
 ✅ Basic navigation: PASS/FAIL
 ✅ Script discovery: PASS/FAIL
-✅ Simple echo test: PASS/FAIL
-✅ gum confirm (interactive): PASS/FAIL
-✅ gum input (interactive): PASS/FAIL
-✅ bash read (interactive): PASS/FAIL
+✅ Non-interactive execution: PASS/FAIL
+✅ Interactive execution (PTY): PASS/FAIL
 ✅ npm scripts (if available): PASS/FAIL
-✅ TUI suspend/resume: PASS/FAIL
 ```
 
 ## Troubleshooting
@@ -153,14 +120,14 @@ go install github.com/charmbracelet/gum@latest
 - Try running with: `cargo run --release`
 
 ### If interactive input doesn't work:
-- Check the implementation in `src/script/executor.rs`
-- Verify `Stdio::inherit()` is being used
-- Confirm `suspend_tui()` and `resume_tui()` are called in `src/main.rs`
+- Check the PTY implementation in `src/ui/pty_runner.rs`
+- Verify the `build_command()` function generates correct shell commands
+- Check that key events are being forwarded to the PTY in `src/main.rs`
 
 ## Success Criteria
 
 **All manual TUI tests pass** = Interactive input support is working correctly! 🎉
 
-**All 90 automated tests pass** = Code quality and functionality are maintained! 🎉
+**All 258 automated tests pass** = Code quality and functionality are maintained! 🎉
 
 The key indicator for manual testing is: **You can type into gum prompts and see your input.**

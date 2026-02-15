@@ -1,0 +1,26 @@
+# Jarvis Rust Formatting Configuration
+# Run: cargo fmt
+# Check: cargo fmt --check
+
+# Edition matches Cargo.toml
+edition = "2021"
+
+# Max line width (default: 100)
+max_width = 100
+
+# Use spaces, 4-space indentation (default)
+hard_tabs = false
+tab_spaces = 4
+
+# Use field init shorthand: `Point { x, y }` instead of `Point { x: x, y: y }`
+use_field_init_shorthand = true
+
+# Use `?` operator shorthand
+use_try_shorthand = true
+
+# --- Nightly-only options (uncomment when using nightly toolchain) ---
+# imports_granularity = "Crate"
+# group_imports = "StdExternalCrate"
+# fn_single_line = true
+# format_strings = false
+# normalize_doc_attributes = true

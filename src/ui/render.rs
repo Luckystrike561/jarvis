@@ -23,19 +23,21 @@
 //! - `render_search_bar` - Draws the search input when active
 //! - `render_script_tree` - Draws the categorized script list
 //! - `render_details` - Draws the selected script details
-//! - `render_output` - Draws execution output
+//! - `render_terminal_output` - Draws inline terminal output from PTY
 //! - `render_footer` - Draws the keyboard shortcuts
 //! - `render_info_modal` - Draws the info popup overlay
 //!
-//! ## Styling
+//! ## Border States
 //!
-//! The UI uses a consistent color scheme:
-//! - Cyan for headers and active elements
-//! - Yellow for categories and highlights
-//! - Green for success indicators
-//! - White/Gray for regular text
+//! The right panel border changes based on execution state:
+//! - **Idle**: Default/dim gray border
+//! - **Running**: Animated yellow/cyan border (spinning dots pattern)
+//! - **Success**: Green border
+//! - **Failure**: Red border
 
 use crate::ui::app::{App, FocusPane, TreeItem};
+use crate::ui::pty_runner::ExecutionStatus;
+use crate::ui::terminal_widget::TerminalView;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -44,7 +46,13 @@ use ratatui::{
     Frame,
 };
 
+/// Characters used for the spinning animation on the running border
+const SPINNER_CHARS: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
 pub fn render(frame: &mut Frame, app: &mut App) {
+    // Tick the animation
+    app.tick_animation();
+
     // Main layout: Header + (optional Search) + Body + Footer
     let main_constraints = if app.search_mode {
         vec![
@@ -68,36 +76,31 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 
     let (body_idx, footer_idx) = if app.search_mode {
         // Render header
-        render_header(frame, main_chunks[0]);
+        render_header(frame, app, main_chunks[0]);
         // Render search bar
         render_search_bar(frame, app, main_chunks[1]);
         (2, 3)
     } else {
         // Render header
-        render_header(frame, main_chunks[0]);
+        render_header(frame, app, main_chunks[0]);
         (1, 2)
     };
 
     // Split body into left (scripts) and right (details/output)
     let body_chunks = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
+        .constraints([Constraint::Percentage(20), Constraint::Percentage(80)])
         .split(main_chunks[body_idx]);
 
     // Render script tree on left
     render_script_tree(frame, app, body_chunks[0]);
 
-    // Split right side into details and output
-    if !app.output.is_empty() {
-        let right_chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-            .split(body_chunks[1]);
-
-        render_details(frame, app, right_chunks[0]);
-        render_output(frame, app, right_chunks[1]);
+    // Render right side: terminal output (or empty state)
+    let has_terminal = app.has_terminal_output();
+    if has_terminal {
+        render_terminal_output(frame, app, body_chunks[1]);
     } else {
-        render_details(frame, app, body_chunks[1]);
+        render_empty_output(frame, app, body_chunks[1]);
     }
 
     // Render footer
@@ -109,13 +112,58 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     }
 }
 
-fn render_header(frame: &mut Frame, area: Rect) {
-    let header_text = vec![Line::from(vec![Span::styled(
-        "  JARVIS - Just Another Rather Very Intelligent System  ",
+fn render_header(frame: &mut Frame, app: &App, area: Rect) {
+    // Build header: JARVIS branding on the left, selected item details on the right
+    let mut spans = vec![Span::styled(
+        "  JARVIS  ",
         Style::default()
             .fg(Color::Cyan)
             .add_modifier(Modifier::BOLD),
-    )])];
+    )];
+
+    // Append selected item details inline
+    match app.selected_item() {
+        Some(TreeItem::Function(func)) => {
+            spans.push(Span::styled("│ ", Style::default().fg(Color::DarkGray)));
+            spans.push(Span::styled(
+                func.display_name.clone(),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ));
+            if !func.description.is_empty() {
+                spans.push(Span::styled("  ", Style::default()));
+                spans.push(Span::styled(
+                    func.description.clone(),
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::ITALIC),
+                ));
+            }
+        }
+        Some(TreeItem::Category(category)) => {
+            let display_name = app.get_category_display_name(&category);
+            let count = app
+                .functions
+                .iter()
+                .filter(|f| f.category == category)
+                .count();
+            spans.push(Span::styled("│ ", Style::default().fg(Color::DarkGray)));
+            spans.push(Span::styled(
+                display_name,
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ));
+            spans.push(Span::styled(
+                format!("  ({} functions)", count),
+                Style::default().fg(Color::Gray),
+            ));
+        }
+        None => {}
+    }
+
+    let header_text = vec![Line::from(spans)];
 
     let header = Paragraph::new(header_text)
         .block(
@@ -224,90 +272,27 @@ fn render_script_tree(frame: &mut Frame, app: &mut App, area: Rect) {
     frame.render_widget(list, area);
 }
 
-fn render_details(frame: &mut Frame, app: &App, area: Rect) {
-    let border_color = if app.focus == FocusPane::Details {
+/// Render a placeholder when no command has been run yet
+fn render_empty_output(frame: &mut Frame, app: &App, area: Rect) {
+    let border_color = if app.focus == FocusPane::Output {
         Color::Cyan
     } else {
         Color::Gray
     };
 
-    let text = match app.selected_item() {
-        Some(TreeItem::Category(category)) => {
-            let count = app
-                .functions
-                .iter()
-                .filter(|f| f.category == category)
-                .count();
-
-            let display_name = app.get_category_display_name(&category);
-
-            vec![
-                Line::from(vec![Span::styled(
-                    display_name,
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD),
-                )]),
-                Line::from(""),
-                Line::from(vec![
-                    Span::styled("Type: ", Style::default().fg(Color::Gray)),
-                    Span::raw("Category"),
-                ]),
-                Line::from(vec![
-                    Span::styled("Functions: ", Style::default().fg(Color::Gray)),
-                    Span::raw(format!("{}", count)),
-                ]),
-                Line::from(""),
-                Line::from("────────────────────────────────────────"),
-                Line::from(""),
-                Line::from("Press Enter to expand/collapse"),
-            ]
-        }
-        Some(TreeItem::Function(func)) => {
-            vec![
-                Line::from(vec![Span::styled(
-                    func.display_name.clone(),
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
-                )]),
-                Line::from(""),
-                Line::from(vec![
-                    Span::styled("Name: ", Style::default().fg(Color::Gray)),
-                    Span::raw(func.display_name.clone()),
-                ]),
-                Line::from(vec![
-                    Span::styled("Function: ", Style::default().fg(Color::Gray)),
-                    Span::raw(func.name.clone()),
-                ]),
-                Line::from(vec![
-                    Span::styled("Category: ", Style::default().fg(Color::Gray)),
-                    Span::raw(func.category.clone()),
-                ]),
-                Line::from(""),
-                Line::from(vec![Span::styled(
-                    "Description:",
-                    Style::default().fg(Color::Gray),
-                )]),
-                Line::from(func.description.clone()),
-                Line::from(""),
-                Line::from("────────────────────────────────────────"),
-                Line::from(""),
-                Line::from("Press Enter to execute this function"),
-            ]
-        }
-        None => vec![
-            Line::from("No item selected"),
-            Line::from(""),
-            Line::from("Use ↑↓ or j/k to navigate"),
-        ],
-    };
+    let text = vec![
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            "  Select a function and press Enter to run it",
+            Style::default().fg(Color::DarkGray),
+        )]),
+    ];
 
     let paragraph = Paragraph::new(text)
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("🖥️  Script Details")
+                .title("💬 Output")
                 .border_style(Style::default().fg(border_color)),
         )
         .wrap(Wrap { trim: true });
@@ -315,43 +300,113 @@ fn render_details(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(paragraph, area);
 }
 
-fn render_output(frame: &mut Frame, app: &App, area: Rect) {
-    let border_color = if app.focus == FocusPane::Output {
-        Color::Cyan
+/// Render the inline terminal output panel with PTY content
+fn render_terminal_output(frame: &mut Frame, app: &mut App, area: Rect) {
+    let status = app.current_execution_status();
+    let selected = app.selected_function();
+
+    // Determine if the running PTY belongs to the selected function
+    let pty_is_selected = if let (Some(ref handle), Some(ref active), Some(ref sel)) =
+        (&app.pty_handle, &app.active_function, &selected)
+    {
+        let _ = handle; // used below for parser
+        active.name == sel.name && active.script_type == sel.script_type
     } else {
-        Color::Gray
+        false
     };
 
-    // Calculate visible lines based on area height (subtract 2 for borders)
-    let visible_height = area.height.saturating_sub(2) as usize;
-
-    // Get the scrolled window of output lines
-    let total_lines = app.output.len();
-    let start_idx = app.output_scroll.min(total_lines.saturating_sub(1));
-    let end_idx = (start_idx + visible_height).min(total_lines);
-
-    let visible_output: Vec<Line> = app.output[start_idx..end_idx]
-        .iter()
-        .map(|line| Line::from(line.clone()))
-        .collect();
-
-    // Create title with scroll position indicator
-    let title = if total_lines > visible_height {
-        format!("💬 Output [{}/{}]", start_idx + 1, total_lines)
-    } else {
-        "💬 Output".to_string()
+    // Determine border color based on execution status
+    let (border_color, border_modifier) = match status {
+        ExecutionStatus::Idle => (
+            if app.focus == FocusPane::Output {
+                Color::Cyan
+            } else {
+                Color::Gray
+            },
+            Modifier::empty(),
+        ),
+        ExecutionStatus::Running => {
+            // Steady yellow border while running (spinner in title provides animation)
+            (Color::Yellow, Modifier::BOLD)
+        }
+        ExecutionStatus::Succeeded => (Color::Green, Modifier::BOLD),
+        ExecutionStatus::Failed => (Color::Red, Modifier::BOLD),
     };
 
-    let paragraph = Paragraph::new(visible_output)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(title)
-                .border_style(Style::default().fg(border_color)),
-        )
-        .wrap(Wrap { trim: true });
+    // Build title with status indicator
+    let display_name = selected
+        .as_ref()
+        .map(|f| f.display_name.as_str())
+        .unwrap_or("Command");
 
-    frame.render_widget(paragraph, area);
+    let title = match status {
+        ExecutionStatus::Idle => "💬 Output".to_string(),
+        ExecutionStatus::Running => {
+            let spinner = SPINNER_CHARS[(app.animation_tick as usize) % SPINNER_CHARS.len()];
+            format!("{} Running: {}", spinner, display_name)
+        }
+        ExecutionStatus::Succeeded => {
+            format!("✅ {}", display_name)
+        }
+        ExecutionStatus::Failed => {
+            let exit_code = if pty_is_selected {
+                app.pty_handle
+                    .as_ref()
+                    .and_then(super::pty_runner::PtyHandle::poll_exit_code)
+            } else if let Some(ref func) = selected {
+                app.command_history.get(func).and_then(|s| s.exit_code)
+            } else {
+                None
+            };
+            if let Some(code) = exit_code {
+                format!("❌ {} (exit {})", display_name, code)
+            } else {
+                format!("❌ {}", display_name)
+            }
+        }
+    };
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(title)
+        .border_style(
+            Style::default()
+                .fg(border_color)
+                .add_modifier(border_modifier),
+        );
+
+    // Get the inner area (inside the border)
+    let inner_area = block.inner(area);
+
+    // Render the border block first
+    frame.render_widget(block, area);
+
+    // Now render the terminal content inside the border
+    // Resolve the vt100 parser: running PTY (if selected) or history for the selected function
+    let parser_ref = if pty_is_selected {
+        app.pty_handle.as_ref().map(|h| &h.parser)
+    } else if let Some(ref func) = selected {
+        app.command_history.get(func).map(|s| &s.parser)
+    } else {
+        None
+    };
+
+    if let Some(parser) = parser_ref {
+        // Use mouse selection state for highlight
+        let has_selection = app.mouse_sel_start.is_some() && app.mouse_sel_end.is_some();
+        let terminal_view = TerminalView::new(parser)
+            .scroll_offset(app.output_scroll)
+            .selection(has_selection, app.mouse_sel_start, app.mouse_sel_end);
+        frame.render_widget(terminal_view, inner_area);
+    }
+
+    // Store inner area for mouse hit-testing in the event loop
+    app.output_inner_area = Some((
+        inner_area.x,
+        inner_area.y,
+        inner_area.width,
+        inner_area.height,
+    ));
 }
 
 fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
@@ -359,11 +414,12 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
         "[↑↓] Navigate  [Enter] Execute  [ESC] Exit Search  [Backspace] Delete"
     } else {
         match app.focus {
-            FocusPane::ScriptList => {
+            FocusPane::Details | FocusPane::ScriptList => {
                 "[↑↓/jk] Navigate  [←→/hl] Collapse/Expand  [/] Search  [i] Info  [Enter] Toggle/Execute  [Tab] Switch  [Q] Quit"
             }
-            FocusPane::Details => "[Tab] Switch Pane  [/] Search  [i] Info  [Q] Quit",
-            FocusPane::Output => "[↑↓/jk] Scroll  [Tab] Switch Pane  [i] Info  [Q] Quit",
+            FocusPane::Output => {
+                "[jk] Scroll  [Ctrl+d/u] Half-page  [G] Bottom  [gg] Top  [Mouse] Select+Copy  [Esc/q] Back  [Tab] Switch"
+            }
         }
     };
 

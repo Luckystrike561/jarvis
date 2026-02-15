@@ -47,7 +47,7 @@ pub struct UsageEntry {
 pub struct ProjectUsage {
     /// The absolute path to the project directory
     pub project_path: PathBuf,
-    /// Map of function_name -> usage entry
+    /// Map of `function_name` -> usage entry
     pub entries: HashMap<String, UsageEntry>,
 }
 

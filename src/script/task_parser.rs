@@ -274,7 +274,7 @@ pub fn parse_taskfile_annotations_from_content(
     Ok(annotations_map)
 }
 
-/// Parse JSON output from `task --list-all --json` into a list of TaskTask.
+/// Parse JSON output from `task --list-all --json` into a list of `TaskTask`.
 ///
 /// If annotations are provided, they will be applied to matching tasks.
 pub fn parse_task_list_json(
