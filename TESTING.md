@@ -7,7 +7,7 @@ This guide covers both manual TUI testing and automated unit/integration tests.
 ### Running Tests
 
 ```bash
-# Run all 258 tests
+# Run all 289 tests
 cargo test
 
 # Run specific test
@@ -24,7 +24,7 @@ devbox run test
 
 Jarvis has comprehensive test coverage across all modules:
 
-- **258 total tests** covering ~90% of testable code
+- **289 total tests** covering ~90% of testable code
 - **Unit tests** for script discovery, parsing, npm parsing, PTY execution, and terminal widget
 - **Integration tests** for application logic and edge cases
 - **Mock-based tests** for TUI event handling and key input processing
@@ -39,6 +39,7 @@ Jarvis has comprehensive test coverage across all modules:
 - `src/script/makefile_parser.rs` - ~90% (Makefile parsing)
 - `src/script/task_parser.rs` - ~90% (Taskfile.yml parsing)
 - `src/script/nx_parser.rs` - ~90% (Nx workspace parsing)
+- `src/script/terraform_parser.rs` - ~90% (Terraform/OpenTofu command discovery)
 - `src/ui/app.rs` - ~90% (application state and navigation)
 - `src/ui/pty_runner.rs` - ~85% (PTY execution, shell escaping, command building)
 - `src/ui/terminal_widget.rs` - ~80% (selection, scrollback, color conversion)
@@ -69,6 +70,10 @@ When you start Jarvis with `jarvis -p example`, you should see:
 - **Makefile** - Make targets
 - **package.json** - npm scripts (from example/node/)
 - **devbox.json** - Devbox scripts
+- **justfile** - Just recipes
+- **Cargo.toml** - Cargo commands (from example/cargo-demo/)
+- **nx.json** - Nx project targets (from example/nx/)
+- **terraform/** - Terraform/OpenTofu commands (from example/terraform/)
 
 ### 3. Non-Interactive Execution ✅
 Select a simple echo function from any discovered script.
@@ -105,6 +110,7 @@ Select an interactive function (e.g., one that uses `gum` or `read`).
 ✅ Non-interactive execution: PASS/FAIL
 ✅ Interactive execution (PTY): PASS/FAIL
 ✅ npm scripts (if available): PASS/FAIL
+✅ Terraform/OpenTofu commands (if binary available): PASS/FAIL
 ```
 
 ## Troubleshooting
@@ -128,6 +134,6 @@ go install github.com/charmbracelet/gum@latest
 
 **All manual TUI tests pass** = Interactive input support is working correctly! 🎉
 
-**All 258 automated tests pass** = Code quality and functionality are maintained! 🎉
+**All 289 automated tests pass** = Code quality and functionality are maintained! 🎉
 
 The key indicator for manual testing is: **You can type into gum prompts and see your input.**

@@ -113,14 +113,23 @@ jarvis/
 │       ├── makefile_parser.rs # Makefile parsing
 │       ├── nx_parser.rs      # Nx workspace parsing
 │       ├── task_parser.rs    # Taskfile.yml parsing
+│       ├── terraform_parser.rs # Terraform/OpenTofu parsing
 │       └── utils.rs          # Shared parser utilities
 │   └── usage/            # Usage tracking
 │       ├── mod.rs
 │       └── storage.rs        # Usage data persistence
 ├── example/              # Example scripts and test files
+│   ├── cargo-demo/      # Cargo.toml example
 │   ├── jarvis/          # Bash script examples
 │   ├── node/            # npm/package.json examples
-│   └── scripts/         # Additional script examples
+│   ├── nx/              # Nx workspace examples
+│   ├── scripts/         # Additional script examples
+│   ├── terraform/       # Terraform/OpenTofu examples
+│   ├── devbox.json      # Devbox script example
+│   ├── example.sh       # Bash function example
+│   ├── justfile         # Just recipe example
+│   ├── Makefile         # Makefile target example
+│   └── Taskfile.yml     # Taskfile example
 ├── devbox.json           # Devbox configuration
 ├── .envrc                # direnv config (optional)
 └── Cargo.toml            # Rust dependencies
@@ -153,7 +162,7 @@ jarvis/
 ## 🧪 Testing
 
 ```bash
-# Run all 258 tests
+# Run all 289 tests
 devbox run test
 
 # Run specific test
