@@ -232,7 +232,10 @@ fn build_command(
             // For Terraform, the ScriptFile path is the directory containing .tf files
             let dir = path.clone();
             let args: Vec<String> = func.name.split_whitespace().map(String::from).collect();
-            Ok(("terraform".to_string(), args, dir))
+            let binary = script::terraform_parser::resolve_terraform_binary()
+                .unwrap_or("terraform")
+                .to_string();
+            Ok((binary, args, dir))
         }
     }
 }
@@ -837,7 +840,12 @@ mod tests {
 
         let (program, args, cwd) = build_command(&func, &sf).unwrap();
 
-        assert_eq!(program, "terraform");
+        // Binary may be "terraform" or "tofu" depending on what's installed
+        assert!(
+            program == "terraform" || program == "tofu",
+            "Expected 'terraform' or 'tofu', got '{}'",
+            program
+        );
         assert_eq!(args, vec!["plan"]);
         assert_eq!(cwd, PathBuf::from("/infra/terraform"));
     }
@@ -849,7 +857,11 @@ mod tests {
 
         let (program, args, cwd) = build_command(&func, &sf).unwrap();
 
-        assert_eq!(program, "terraform");
+        assert!(
+            program == "terraform" || program == "tofu",
+            "Expected 'terraform' or 'tofu', got '{}'",
+            program
+        );
         assert_eq!(args, vec!["workspace", "select", "staging"]);
         assert_eq!(cwd, PathBuf::from("/infra/terraform"));
     }
@@ -861,7 +873,11 @@ mod tests {
 
         let (program, args, cwd) = build_command(&func, &sf).unwrap();
 
-        assert_eq!(program, "terraform");
+        assert!(
+            program == "terraform" || program == "tofu",
+            "Expected 'terraform' or 'tofu', got '{}'",
+            program
+        );
         assert_eq!(args, vec!["init"]);
         assert_eq!(cwd, PathBuf::from("/infra"));
     }

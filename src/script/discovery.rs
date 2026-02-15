@@ -10,7 +10,7 @@
 //! - **Taskfiles** (`Taskfile.yml`, etc.) - Tasks defined in go-task format
 //! - **Makefiles** (`Makefile`, etc.) - Targets defined in GNU Make format
 //! - **Justfiles** (`justfile`, etc.) - Recipes defined in just format
-//! - **Terraform** (`*.tf`) - Terraform infrastructure-as-code commands
+//! - **Terraform / `OpenTofu`** (`*.tf`) — Terraform infrastructure-as-code commands
 //!
 //! ## Discovery Locations
 //!
@@ -325,8 +325,8 @@ fn determine_script_type(filename: &str, file_path: &Path) -> Result<ScriptType>
         if ext == "tf" {
             if !crate::script::terraform_parser::is_terraform_available() {
                 anyhow::bail!(
-                    "Terraform file found but 'terraform' is not installed or not in PATH. \
-                    Please install Terraform to use this file."
+                    "Terraform file found but neither 'terraform' nor 'tofu' (OpenTofu) is installed or in PATH. \
+                    Please install Terraform or OpenTofu to use this file."
                 );
             }
             return Ok(ScriptType::Terraform);

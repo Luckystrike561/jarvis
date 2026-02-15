@@ -15,7 +15,7 @@
 //! | Just | `justfile` | [`just_parser::list_recipes`] |
 //! | Cargo | `Cargo.toml` | [`cargo_parser::list_targets`] |
 //! | Nx | `nx.json` | [`nx_parser::list_targets`] |
-//! | Terraform | `*.tf` | [`terraform_parser::list_commands`] |
+//! | Terraform / `OpenTofu` | `*.tf` | [`terraform_parser::list_commands`] |
 //!
 //! ## Discovery
 //!

@@ -1,0 +1,38 @@
+# Example Terraform configuration for testing Jarvis Terraform/OpenTofu integration
+# See: https://www.terraform.io/ or https://opentofu.org/
+#
+# This is a minimal local-only configuration that requires no cloud credentials.
+# It uses the `null_resource` and `local_file` providers to demonstrate
+# Terraform commands without any real infrastructure.
+
+terraform {
+  required_version = ">= 1.0"
+
+  required_providers {
+    local = {
+      source  = "hashicorp/local"
+      version = "~> 2.0"
+    }
+    null = {
+      source  = "hashicorp/null"
+      version = "~> 3.0"
+    }
+  }
+}
+
+# Create a local file as a simple demonstration
+resource "local_file" "hello" {
+  content  = "Hello from Jarvis Terraform example!"
+  filename = "${path.module}/output/hello.txt"
+}
+
+# A null resource that runs a local command
+resource "null_resource" "echo" {
+  provisioner "local-exec" {
+    command = "echo 'Terraform apply completed successfully!'"
+  }
+
+  triggers = {
+    always_run = timestamp()
+  }
+}

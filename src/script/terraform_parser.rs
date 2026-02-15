@@ -1,30 +1,40 @@
-//! # Terraform Parser
+//! # Terraform / `OpenTofu` Parser
 //!
 //! This module discovers Terraform workspaces and provides common Terraform
 //! commands for execution through the TUI.
 //!
 //! ## Overview
 //!
-//! When `*.tf` files are detected in a directory and the `terraform` binary is
-//! available, this parser provides:
+//! When `*.tf` files are detected in a directory and either the `terraform` or
+//! `tofu` (`OpenTofu`) binary is available, this parser provides:
 //!
 //! 1. **Common commands** — `init`, `plan`, `apply`, `destroy`, `validate`, `fmt`
 //! 2. **Workspace commands** — `workspace select <name>` for each workspace
-//!    discovered via `terraform workspace list`
+//!    discovered via `terraform workspace list` (or `tofu workspace list`)
+//!
+//! ## Binary Resolution
+//!
+//! The parser checks for tool availability in this order:
+//! 1. `terraform` — `HashiCorp` Terraform
+//! 2. `tofu` — `OpenTofu` (drop-in replacement)
+//!
+//! The first available binary is cached and used for all subsequent operations.
+//! Use [`resolve_terraform_binary`] to get the resolved binary name.
 //!
 //! ## Key Types
 //!
 //! - [`TerraformCommand`] — Represents a Terraform command with display metadata
 //! - [`TerraformCommandType`] — Distinguishes between common commands and
 //!   workspace commands
-//! - [`is_terraform_available`] — Checks if the `terraform` CLI is installed
+//! - [`is_terraform_available`] — Checks if `terraform` or `tofu` is installed
+//! - [`resolve_terraform_binary`] — Returns the resolved binary name
 //! - [`list_commands`] — Main entry point to list all Terraform commands
 //!
 //! ## CLI Integration
 //!
 //! Workspaces are discovered by running:
 //! ```bash
-//! terraform workspace list
+//! terraform workspace list  # or: tofu workspace list
 //! ```
 //!
 //! If the workspace directory is not initialized (no `.terraform/`), the parser
@@ -33,13 +43,13 @@
 //! ## Execution
 //!
 //! Commands are executed based on their type:
-//! - Common commands: `terraform <command>` (e.g., `terraform plan`)
-//! - Workspace selection: `terraform workspace select <name>`
+//! - Common commands: `<binary> <command>` (e.g., `terraform plan` or `tofu plan`)
+//! - Workspace selection: `<binary> workspace select <name>`
 //!
 //! ## Availability Caching
 //!
-//! The `terraform` binary availability is cached using [`OnceLock`] to avoid
-//! repeated process spawning during discovery.
+//! The resolved binary name is cached using [`OnceLock`] to avoid repeated
+//! process spawning during discovery.
 
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -49,8 +59,9 @@ use anyhow::{Context, Result};
 
 use crate::script::discovery::format_display_name;
 
-/// Cache for terraform availability check (checked once per process)
-static TERRAFORM_AVAILABLE: OnceLock<bool> = OnceLock::new();
+/// Cache for resolved terraform/tofu binary name (checked once per process).
+/// Contains `Some("terraform")` or `Some("tofu")` if available, `None` otherwise.
+static TERRAFORM_BINARY: OnceLock<Option<&'static str>> = OnceLock::new();
 
 /// The type of Terraform command
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -73,17 +84,42 @@ pub struct TerraformCommand {
     pub command_type: TerraformCommandType,
 }
 
-/// Check if the `terraform` binary is available.
-pub fn is_terraform_available() -> bool {
-    *TERRAFORM_AVAILABLE.get_or_init(|| {
-        Command::new("terraform")
-            .arg("--version")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false)
+/// Try a single binary name to see if it responds to `--version`.
+fn check_binary(name: &str) -> bool {
+    Command::new(name)
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// Resolve which binary to use: `terraform` first, then `tofu`.
+///
+/// The result is cached for the lifetime of the process.
+fn resolve_binary() -> Option<&'static str> {
+    *TERRAFORM_BINARY.get_or_init(|| {
+        if check_binary("terraform") {
+            Some("terraform")
+        } else if check_binary("tofu") {
+            Some("tofu")
+        } else {
+            None
+        }
     })
+}
+
+/// Check if either `terraform` or `tofu` is available.
+pub fn is_terraform_available() -> bool {
+    resolve_binary().is_some()
+}
+
+/// Return the resolved binary name (`"terraform"` or `"tofu"`).
+///
+/// Returns `None` if neither is installed.
+pub fn resolve_terraform_binary() -> Option<&'static str> {
+    resolve_binary()
 }
 
 /// The set of common Terraform commands that are always available.
@@ -148,7 +184,7 @@ fn build_workspace_commands(workspaces: &[String], category: &str) -> Vec<Terraf
             name: format!("workspace select {}", ws),
             display_name: format!("Workspace: {}", format_display_name(ws)),
             category: category.to_string(),
-            description: format!("terraform workspace select {}", ws),
+            description: format!("Switch to the '{}' workspace", ws),
             emoji: Some("\u{1f4c2}".to_string()), // 📂
             ignored: false,
             command_type: TerraformCommandType::Workspace,
@@ -181,12 +217,14 @@ pub fn parse_terraform_commands(
 
 /// Discover Terraform commands for a directory containing `.tf` files.
 ///
-/// This runs `terraform workspace list` to discover workspaces (if the
-/// directory has been initialized), then combines them with the standard
-/// set of common commands.
+/// This runs `<binary> workspace list` (where `<binary>` is `terraform` or
+/// `tofu`) to discover workspaces (if the directory has been initialized),
+/// then combines them with the standard set of common commands.
 pub fn list_commands(tf_dir: &Path, category: &str) -> Result<Vec<TerraformCommand>> {
+    let binary = resolve_binary().context("Neither 'terraform' nor 'tofu' binary is available")?;
+
     // Try to list workspaces — this may fail if `terraform init` hasn't been run
-    let workspace_output = Command::new("terraform")
+    let workspace_output = Command::new(binary)
         .arg("workspace")
         .arg("list")
         .current_dir(tf_dir)
@@ -195,7 +233,8 @@ pub fn list_commands(tf_dir: &Path, category: &str) -> Result<Vec<TerraformComma
         .output()
         .with_context(|| {
             format!(
-                "Failed to run terraform workspace list in: {}",
+                "Failed to run {} workspace list in: {}",
+                binary,
                 tf_dir.display()
             )
         })?;
@@ -213,12 +252,34 @@ pub fn list_commands(tf_dir: &Path, category: &str) -> Result<Vec<TerraformComma
 mod tests {
     use super::*;
 
-    // --- is_terraform_available ---
+    // --- is_terraform_available / resolve_terraform_binary ---
 
     #[test]
     fn test_is_terraform_available_returns_bool() {
         // Just verify it doesn't panic — result depends on CI environment
         let _result = is_terraform_available();
+    }
+
+    #[test]
+    fn test_resolve_terraform_binary_consistency() {
+        // If available, the binary name should be "terraform" or "tofu"
+        if let Some(binary) = resolve_terraform_binary() {
+            assert!(
+                binary == "terraform" || binary == "tofu",
+                "Expected 'terraform' or 'tofu', got '{}'",
+                binary
+            );
+        }
+        // is_terraform_available should agree with resolve_terraform_binary
+        assert_eq!(
+            is_terraform_available(),
+            resolve_terraform_binary().is_some()
+        );
+    }
+
+    #[test]
+    fn test_check_binary_nonexistent() {
+        assert!(!check_binary("nonexistent_binary_xyz_12345"));
     }
 
     // --- parse_workspace_list ---
@@ -347,10 +408,7 @@ mod tests {
 
         assert_eq!(commands[0].name, "workspace select default");
         assert_eq!(commands[0].display_name, "Workspace: Default");
-        assert_eq!(
-            commands[0].description,
-            "terraform workspace select default"
-        );
+        assert_eq!(commands[0].description, "Switch to the 'default' workspace");
         assert_eq!(commands[0].command_type, TerraformCommandType::Workspace);
         assert_eq!(commands[0].emoji, Some("\u{1f4c2}".to_string())); // 📂
 

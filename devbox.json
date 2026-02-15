@@ -7,7 +7,8 @@
     "clippy@1.89.0",
     "rustup@1.28.2",
     "go-task@3.45.5",
-    "just@latest"
+    "just@latest",
+    "opentofu@latest"
   ],
   "shell": {
     "init_hook": [
