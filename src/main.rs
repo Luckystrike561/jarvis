@@ -163,7 +163,7 @@ async fn run_application(args: Args) -> Result<()> {
         // Use the file's parent directory as the working directory
         let dir = canonical_path
             .parent()
-            .map(|p| p.to_path_buf())
+            .map(std::path::Path::to_path_buf)
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
 
         (vec![script_file], dir)
@@ -201,24 +201,7 @@ async fn run_application(args: Args) -> Result<()> {
         }
 
         if script_files.is_empty() {
-            eprintln!("Warning: No scripts found");
-            eprintln!("Searched in: {}", current_dir.display());
-            eprintln!("Also checked: ./script/, ./scripts/, ./jarvis/ (if they exist)");
-            eprintln!(
-                "\nPlease add bash scripts (.sh), package.json, devbox.json, Taskfile.yml, Makefile, justfile, Cargo.toml, or nx.json to get started."
-            );
-            eprintln!("\nExample bash script format:");
-            eprintln!(r#"  #!/usr/bin/env bash"#);
-            eprintln!(r#"  my_function() {{"#);
-            eprintln!(r#"      echo "Hello from my function""#);
-            eprintln!(r#"  }}"#);
-            eprintln!("\nExample package.json format:");
-            eprintln!(r#"  {{"#);
-            eprintln!(r#"    "scripts": {{"#);
-            eprintln!(r#"      "start": "node index.js""#);
-            eprintln!(r#"    }}"#);
-            eprintln!(r#"  }}"#);
-            std::process::exit(1);
+            anyhow::bail!("No scripts found in {} (also checked: ./script/, ./scripts/, ./jarvis/). Add bash scripts (.sh), package.json, devbox.json, Taskfile.yml, Makefile, justfile, Cargo.toml, or nx.json to get started.", current_dir.display());
         }
 
         (script_files, current_dir)
@@ -469,13 +452,9 @@ async fn run_application(args: Args) -> Result<()> {
     }
 
     if all_functions.is_empty() {
-        eprintln!("Error: No functions found in any scripts");
-        eprintln!("\nMake sure your scripts define bash functions:");
-        eprintln!(r#"  my_function() {{"#);
-        eprintln!(r#"      echo "Hello""#);
-        eprintln!(r#"  }}"#);
-        eprintln!("\nAll bash functions are automatically discovered.");
-        std::process::exit(1);
+        anyhow::bail!(
+            "No functions found in any scripts. Make sure your scripts define bash functions."
+        );
     }
 
     // Setup terminal
@@ -761,7 +740,7 @@ fn execute_inline(
     app: &mut App,
     func: &script::ScriptFunction,
     script_files: &[script::ScriptFile],
-    usage_tracker: Option<Arc<Mutex<UsageTracker>>>,
+    _usage_tracker: Option<Arc<Mutex<UsageTracker>>>,
     terminal_size: (u16, u16),
 ) -> Result<()> {
     let func_name = func.name.clone();
@@ -808,39 +787,13 @@ fn execute_inline(
         app.focus = ui::app::FocusPane::Output;
 
         // Store usage tracker reference for later (on completion)
-        // We'll record usage when the PTY finishes successfully
-        if let Some(tracker) = usage_tracker {
-            // Store the tracker info so we can record on completion
-            // We do this by spawning a thread that waits and records
-            let func_name_clone = func_name.clone();
-            let script_type = func.script_type;
-            let category_clone = original_category;
-            std::thread::spawn(move || {
-                // Wait a bit then check periodically
-                // The main loop handles finalization, so we don't need to do much here
-                // Just record usage when the command finishes
-                loop {
-                    std::thread::sleep(Duration::from_millis(500));
-                    if let Ok(tracker_guard) = tracker.lock() {
-                        // We can't easily check if the PTY is done from here,
-                        // so usage recording is handled in the main loop instead
-                        drop(tracker_guard);
-                        break;
-                    }
-                }
-            });
-            // Actually, let's handle this in the main loop instead
-            // The thread above is not ideal. We'll track usage differently.
-            let _ = func_name_clone;
-            let _ = script_type;
-            let _ = category_clone;
-        }
+        // Usage is recorded in the main event loop when PTY finishes successfully
     }
 
     Ok(())
 }
 
-/// Convert a crossterm KeyEvent into the byte sequence to send to a PTY.
+/// Convert a crossterm `KeyEvent` into the byte sequence to send to a PTY.
 /// This handles regular characters, control characters, and special keys.
 fn key_event_to_bytes(key: &KeyEvent) -> Vec<u8> {
     let has_ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
@@ -849,7 +802,9 @@ fn key_event_to_bytes(key: &KeyEvent) -> Vec<u8> {
         KeyCode::Char(c) => {
             if has_ctrl {
                 // Ctrl+A = 0x01, Ctrl+B = 0x02, ..., Ctrl+Z = 0x1A
-                let ctrl_byte = (c.to_ascii_lowercase() as u8).wrapping_sub(b'a').wrapping_add(1);
+                let ctrl_byte = (c.to_ascii_lowercase() as u8)
+                    .wrapping_sub(b'a')
+                    .wrapping_add(1);
                 if ctrl_byte <= 26 {
                     vec![ctrl_byte]
                 } else {

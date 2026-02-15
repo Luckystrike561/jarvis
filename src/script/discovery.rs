@@ -32,7 +32,7 @@
 //!
 //! - [`discover_scripts`] - Full recursive discovery with depth 2
 //! - [`discover_scripts_shallow`] - Shallow discovery with depth 1
-//! - [`format_display_name`] - Converts snake_case to Title Case
+//! - [`format_display_name`] - Converts `snake_case` to Title Case
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -106,7 +106,7 @@ fn is_devbox_available() -> bool {
 /// Pre-warm all tool availability checks in parallel.
 ///
 /// This spawns threads to check each tool concurrently, so by the time
-/// discovery needs the results, they're already cached in the OnceLock statics.
+/// discovery needs the results, they're already cached in the `OnceLock` statics.
 pub fn prewarm_tool_checks() {
     std::thread::spawn(is_devbox_available);
     std::thread::spawn(crate::script::task_parser::is_task_available);
@@ -122,7 +122,7 @@ pub fn prewarm_tool_checks() {
 ///
 /// Examples:
 ///   - "example" -> "Example"
-///   - "example_file" -> "Example File"
+///   - "`example_file`" -> "Example File"
 ///   - "example-file" -> "Example File"
 ///   - "service.auth" -> "Service Auth"
 ///   - "🏠 homelab" -> "🏠 Homelab"
@@ -152,12 +152,12 @@ pub fn discover_scripts_shallow(scripts_dir: &Path) -> Result<Vec<ScriptFile>> {
     discover_scripts_with_depth(scripts_dir, 1)
 }
 
-/// Discover a single script file and return its ScriptFile representation.
+/// Discover a single script file and return its `ScriptFile` representation.
 ///
 /// This function determines the script type from the file extension/name:
 /// - `.sh` files → Bash
-/// - `package.json` → PackageJson
-/// - `devbox.json` → DevboxJson
+/// - `package.json` → `PackageJson`
+/// - `devbox.json` → `DevboxJson`
 /// - `Taskfile.yml` (and variants) → Task
 /// - `Makefile` (and variants) → Makefile
 ///

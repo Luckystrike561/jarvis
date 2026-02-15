@@ -254,7 +254,7 @@ pub fn get_selected_text(
 
     // Trim trailing whitespace from each line
     text.lines()
-        .map(|l| l.trim_end())
+        .map(str::trim_end)
         .collect::<Vec<_>>()
         .join("\n")
         .trim_end()

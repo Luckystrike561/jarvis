@@ -44,20 +44,6 @@ pub struct ExecutionState {
     pub category: String,
 }
 
-impl ExecutionState {
-    fn new(display_name: String, category: String, cols: u16, rows: u16) -> Self {
-        Self {
-            status: ExecutionStatus::Running,
-            parser: Arc::new(Mutex::new(vt100::Parser::new(rows, cols, 10000))),
-            exit_code: None,
-            started_at: Instant::now(),
-            finished_at: None,
-            display_name,
-            category,
-        }
-    }
-}
-
 /// Session-scoped command history, keyed by a unique target identifier
 pub struct CommandHistory {
     pub entries: std::collections::HashMap<String, ExecutionState>,
@@ -100,8 +86,18 @@ impl CommandHistory {
     }
 }
 
+/// Escape a string for safe inclusion in a single-quoted shell argument.
+///
+/// This wraps the value in single quotes and escapes any embedded single
+/// quotes using the `'\''` idiom (end quote, escaped literal quote, start
+/// quote). Single-quoting prevents all shell expansions (`$`, `` ` ``,
+/// `\`, `"`, etc.).
+fn shell_escape(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
 /// Build the command to execute for a given script function and its script file.
-/// Returns (program, args, working_dir).
+/// Returns (program, args, `working_dir`).
 fn build_command(
     func: &ScriptFunction,
     script_file: &ScriptFile,
@@ -119,9 +115,9 @@ fn build_command(
                 .and_then(|n| n.to_str())
                 .context("Invalid script filename")?;
             let bash_cmd = format!(
-                r#"cd "{}" && source "{}" && {}"#,
-                script_dir.display(),
-                script_name,
+                "cd {} && source {} && {}",
+                shell_escape(&script_dir.display().to_string()),
+                shell_escape(script_name),
                 func.name
             );
             Ok((
@@ -227,7 +223,7 @@ fn build_command(
                 .context("Failed to get parent dir")?
                 .to_path_buf();
             let (cmd, base_args) = script::nx_parser::nx_command();
-            let mut args: Vec<String> = base_args.iter().map(|s| s.to_string()).collect();
+            let mut args: Vec<String> = base_args.iter().map(|s| (*s).to_string()).collect();
             args.push("run".to_string());
             args.push(func.name.clone());
             Ok((cmd.to_string(), args, dir))
@@ -235,7 +231,7 @@ fn build_command(
     }
 }
 
-/// Find the matching ScriptFile for a function, handling the Frequently Used
+/// Find the matching `ScriptFile` for a function, handling the Frequently Used
 /// category indirection and Nx per-project category matching.
 pub fn find_script_file<'a>(
     func: &ScriptFunction,
@@ -252,149 +248,6 @@ pub fn find_script_file<'a>(
         } else {
             s.category == *original_category
         }
-    })
-}
-
-/// Spawn a command in a PTY and return the execution state.
-/// The PTY output is read in a background thread and fed into the vt100 parser.
-/// The caller must poll `execution_state.status` to know when the command finishes.
-pub fn spawn_in_pty(
-    func: &ScriptFunction,
-    script_file: &ScriptFile,
-    original_category: &str,
-    cols: u16,
-    rows: u16,
-) -> Result<ExecutionState> {
-    let (program, args, working_dir) = build_command(func, script_file)?;
-
-    let pty_system = NativePtySystem::default();
-
-    let pty_pair = pty_system
-        .openpty(PtySize {
-            rows,
-            cols,
-            pixel_width: 0,
-            pixel_height: 0,
-        })
-        .context("Failed to open PTY")?;
-
-    let mut cmd = CommandBuilder::new(&program);
-    for arg in &args {
-        cmd.arg(arg);
-    }
-    cmd.cwd(&working_dir);
-
-    let child = pty_pair
-        .slave
-        .spawn_command(cmd)
-        .context("Failed to spawn command in PTY")?;
-
-    // Drop the slave side — we only need the master
-    drop(pty_pair.slave);
-
-    let state = ExecutionState::new(
-        func.display_name.clone(),
-        original_category.to_string(),
-        cols,
-        rows,
-    );
-
-    let parser = Arc::clone(&state.parser);
-
-    // Read PTY output in a background thread
-    let mut reader = pty_pair
-        .master
-        .try_clone_reader()
-        .context("Failed to clone PTY reader")?;
-
-    // We need to keep the master alive so the PTY stays open
-    let master = Arc::new(Mutex::new(Some(pty_pair.master)));
-    let master_clone = Arc::clone(&master);
-
-    // Shared status so the background thread can update it
-    let status_flag = Arc::new(Mutex::new(ExecutionStatus::Running));
-    let exit_code_shared = Arc::new(Mutex::new(None::<i32>));
-    let finished_at_shared = Arc::new(Mutex::new(None::<Instant>));
-
-    let status_clone = Arc::clone(&status_flag);
-    let exit_clone = Arc::clone(&exit_code_shared);
-    let finished_clone = Arc::clone(&finished_at_shared);
-
-    // Reader thread: reads from PTY and feeds into vt100 parser
-    std::thread::spawn(move || {
-        let mut buf = [0u8; 4096];
-        loop {
-            match reader.read(&mut buf) {
-                Ok(0) => break,
-                Ok(n) => {
-                    if let Ok(mut p) = parser.lock() {
-                        p.process(&buf[..n]);
-                    }
-                }
-                Err(_) => break,
-            }
-        }
-        // Drop master to close PTY
-        if let Ok(mut m) = master_clone.lock() {
-            m.take();
-        }
-    });
-
-    // Child waiter thread: waits for exit and updates status
-    let child = Arc::new(Mutex::new(child));
-    let child_clone = Arc::clone(&child);
-
-    std::thread::spawn(move || {
-        if let Ok(mut c) = child_clone.lock() {
-            match c.wait() {
-                Ok(exit_status) => {
-                    let code = exit_status.exit_code().try_into().unwrap_or(1);
-                    if let Ok(mut ec) = exit_clone.lock() {
-                        *ec = Some(code);
-                    }
-                    if let Ok(mut s) = status_clone.lock() {
-                        *s = if code == 0 {
-                            ExecutionStatus::Succeeded
-                        } else {
-                            ExecutionStatus::Failed
-                        };
-                    }
-                    if let Ok(mut f) = finished_clone.lock() {
-                        *f = Some(Instant::now());
-                    }
-                }
-                Err(_) => {
-                    if let Ok(mut ec) = exit_clone.lock() {
-                        *ec = Some(1);
-                    }
-                    if let Ok(mut s) = status_clone.lock() {
-                        *s = ExecutionStatus::Failed;
-                    }
-                    if let Ok(mut f) = finished_clone.lock() {
-                        *f = Some(Instant::now());
-                    }
-                }
-            }
-        }
-    });
-
-    // Store the shared status/exit_code/finished_at into the state
-    // We return the state and it will be polled from the main loop
-    // We store the Arc references in thread-local storage — actually,
-    // we need a way to poll them. Let's use a wrapper approach.
-    // Instead, we'll make ExecutionState hold the Arc references directly.
-
-    // Actually, let's just re-architect: the state itself holds Arcs.
-    // But we already created `state`. Let's build a new pattern.
-
-    Ok(ExecutionState {
-        status: ExecutionStatus::Running,
-        parser: state.parser,
-        exit_code: None,
-        started_at: state.started_at,
-        finished_at: None,
-        display_name: state.display_name,
-        category: state.category,
     })
 }
 
@@ -432,31 +285,6 @@ impl PtyHandle {
         self.finished_at.lock().ok().and_then(|f| *f)
     }
 
-    /// Get the screen contents from the vt100 parser
-    pub fn screen_contents(&self) -> String {
-        self.parser
-            .lock()
-            .map(|p| p.screen().contents())
-            .unwrap_or_default()
-    }
-
-    /// Get the screen as a vector of rows with ANSI attributes
-    pub fn screen_rows(&self) -> Vec<String> {
-        self.parser
-            .lock()
-            .map(|p| {
-                let screen = p.screen();
-                let (rows, _cols) = screen.size();
-                let mut result = Vec::new();
-                for row in 0..rows {
-                    let row_text = screen.contents_between(row, 0, row + 1, 0);
-                    result.push(row_text);
-                }
-                result
-            })
-            .unwrap_or_default()
-    }
-
     /// Write input bytes to the PTY (sends to child process stdin)
     pub fn write_input(&self, data: &[u8]) -> Result<()> {
         if let Ok(mut writer_guard) = self.writer.lock() {
@@ -468,7 +296,7 @@ impl PtyHandle {
         Ok(())
     }
 
-    /// Convert into an ExecutionState for storage in history
+    /// Convert into an `ExecutionState` for storage in history
     pub fn into_execution_state(self) -> ExecutionState {
         let status = self.poll_status();
         let exit_code = self.poll_exit_code();
@@ -486,7 +314,7 @@ impl PtyHandle {
 }
 
 /// Spawn a command in a PTY and return a handle for polling.
-/// This is the primary API — it returns a PtyHandle that can be polled
+/// This is the primary API — it returns a `PtyHandle` that can be polled
 /// for status, exit code, and terminal output.
 pub fn spawn_pty_command(
     func: &ScriptFunction,
@@ -537,7 +365,9 @@ pub fn spawn_pty_command(
 
     // Extract the writer for sending input to the child process
     let writer: Arc<Mutex<Option<Box<dyn Write + Send>>>> = {
-        let master_guard = master.lock().unwrap();
+        let master_guard = master
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Failed to lock PTY master for writer: {}", e))?;
         let w = master_guard.as_ref().and_then(|m| m.take_writer().ok());
         Arc::new(Mutex::new(w))
     };
