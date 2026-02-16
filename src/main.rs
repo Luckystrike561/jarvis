@@ -496,7 +496,13 @@ async fn run_application(args: Args) -> Result<()> {
 
     let formatted_project_name = script::format_display_name(project_name);
 
-    let mut app = App::new(all_functions.clone(), formatted_project_name);
+    // Load theme from config
+    let config = ui::config::Config::load();
+    let theme = ui::theme::Theme::by_name(&config.theme)
+        .unwrap_or_else(ui::theme::Theme::default_theme)
+        .clone();
+
+    let mut app = App::new(all_functions.clone(), formatted_project_name, theme);
 
     // Build category display names map from script files
     let mut category_display_names = std::collections::HashMap::new();
@@ -997,6 +1003,9 @@ async fn run_app(
     // Track whether we need to record usage for completed commands
     let mut pending_usage_record: Option<(String, script::ScriptType, String)> = None;
 
+    // Theme saved before opening the picker (for cancel/restore)
+    let mut theme_before_picker: Option<ui::theme::Theme> = None;
+
     loop {
         // Check if a running PTY has completed
         if let Some(ref handle) = app.pty_handle {
@@ -1051,6 +1060,51 @@ async fn run_app(
                 match key.code {
                     KeyCode::Char('i') | KeyCode::Esc => {
                         app.toggle_info();
+                    }
+                    _ => {}
+                }
+                continue;
+            }
+
+            // Handle theme picker modal
+            if app.show_theme_picker {
+                let themes = ui::theme::Theme::all();
+                match key.code {
+                    KeyCode::Esc | KeyCode::Char('t') => {
+                        // Cancel: restore the previous theme
+                        if let Some(ref saved) = theme_before_picker {
+                            app.theme = saved.clone();
+                            app.theme_picker_index = themes
+                                .iter()
+                                .position(|t| t.name == saved.name)
+                                .unwrap_or(0);
+                        }
+                        app.show_theme_picker = false;
+                        theme_before_picker = None;
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        app.theme_picker_index = (app.theme_picker_index + 1) % themes.len();
+                        // Live preview: apply the highlighted theme immediately
+                        app.theme = themes[app.theme_picker_index].clone();
+                    }
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        if app.theme_picker_index == 0 {
+                            app.theme_picker_index = themes.len() - 1;
+                        } else {
+                            app.theme_picker_index -= 1;
+                        }
+                        app.theme = themes[app.theme_picker_index].clone();
+                    }
+                    KeyCode::Enter => {
+                        // Confirm: keep the current theme and save config
+                        app.show_theme_picker = false;
+                        theme_before_picker = None;
+                        let config = ui::config::Config {
+                            theme: app.theme.name.to_string(),
+                        };
+                        if let Err(e) = config.save() {
+                            eprintln!("Warning: Failed to save theme config: {}", e);
+                        }
                     }
                     _ => {}
                 }
@@ -1190,6 +1244,11 @@ async fn run_app(
                     }
                     KeyCode::Char('/') => {
                         app.enter_search_mode();
+                    }
+                    KeyCode::Char('t') => {
+                        // Open theme picker
+                        theme_before_picker = Some(app.theme.clone());
+                        app.show_theme_picker = true;
                     }
                     KeyCode::Tab => {
                         app.toggle_focus();

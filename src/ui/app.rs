@@ -40,6 +40,7 @@
 
 use crate::script::ScriptFunction;
 use crate::ui::pty_runner::{CommandHistory, ExecutionStatus, PtyHandle};
+use crate::ui::theme::Theme;
 use crate::usage::FREQUENTLY_USED_CATEGORY;
 use std::collections::HashMap;
 use std::time::Instant;
@@ -90,10 +91,24 @@ pub struct App {
     pub mouse_sel_end: Option<(usize, usize)>,
     /// The inner area of the output panel (set during render, used for mouse hit-testing)
     pub output_inner_area: Option<(u16, u16, u16, u16)>,
+
+    // --- Theme state ---
+    /// The active color theme
+    pub theme: Theme,
+    /// Whether the theme picker modal is visible
+    pub show_theme_picker: bool,
+    /// Currently highlighted index in the theme picker list
+    pub theme_picker_index: usize,
 }
 
 impl App {
-    pub fn new(functions: Vec<ScriptFunction>, project_title: String) -> Self {
+    pub fn new(functions: Vec<ScriptFunction>, project_title: String, theme: Theme) -> Self {
+        // Find the theme's index in the built-in list (for the picker)
+        let theme_picker_index = Theme::all()
+            .iter()
+            .position(|t| t.name == theme.name)
+            .unwrap_or(0);
+
         Self {
             functions,
             frequent_functions: Vec::new(),
@@ -118,6 +133,9 @@ impl App {
             mouse_sel_start: None,
             mouse_sel_end: None,
             output_inner_area: None,
+            theme,
+            show_theme_picker: false,
+            theme_picker_index,
         }
     }
 
@@ -666,6 +684,10 @@ mod tests {
     use super::*;
     use crate::script::ScriptType;
 
+    fn test_theme() -> Theme {
+        Theme::default_theme().clone()
+    }
+
     fn create_test_functions() -> Vec<ScriptFunction> {
         vec![
             ScriptFunction {
@@ -701,7 +723,7 @@ mod tests {
     #[test]
     fn test_app_new() {
         let functions = create_test_functions();
-        let app = App::new(functions.clone(), "Test".to_string());
+        let app = App::new(functions.clone(), "Test".to_string(), test_theme());
 
         assert_eq!(app.functions.len(), 3);
         assert_eq!(app.selected_index, 0);
@@ -717,7 +739,7 @@ mod tests {
     #[test]
     fn test_app_categories() {
         let functions = create_test_functions();
-        let app = App::new(functions, "Test".to_string());
+        let app = App::new(functions, "Test".to_string(), test_theme());
 
         let categories = app.categories();
         assert_eq!(categories.len(), 2);
@@ -728,7 +750,7 @@ mod tests {
     #[test]
     fn test_app_toggle_category() {
         let functions = create_test_functions();
-        let mut app = App::new(functions, "Test".to_string());
+        let mut app = App::new(functions, "Test".to_string(), test_theme());
 
         assert!(!app.is_category_expanded("System"));
 
@@ -742,7 +764,7 @@ mod tests {
     #[test]
     fn test_app_expand_collapse_category() {
         let functions = create_test_functions();
-        let mut app = App::new(functions, "Test".to_string());
+        let mut app = App::new(functions, "Test".to_string(), test_theme());
 
         app.expand_category("System");
         assert!(app.is_category_expanded("System"));
@@ -762,7 +784,7 @@ mod tests {
     #[test]
     fn test_app_navigation_next_previous() {
         let functions = create_test_functions();
-        let mut app = App::new(functions, "Test".to_string());
+        let mut app = App::new(functions, "Test".to_string(), test_theme());
 
         assert_eq!(app.selected_index, 0);
 
@@ -782,7 +804,7 @@ mod tests {
     #[test]
     fn test_app_toggle_focus() {
         let functions = create_test_functions();
-        let mut app = App::new(functions, "Test".to_string());
+        let mut app = App::new(functions, "Test".to_string(), test_theme());
 
         assert_eq!(app.focus, FocusPane::ScriptList);
 
@@ -794,7 +816,7 @@ mod tests {
     #[test]
     fn test_app_toggle_focus_with_output() {
         let functions = create_test_functions();
-        let mut app = App::new(functions, "Test".to_string());
+        let mut app = App::new(functions, "Test".to_string(), test_theme());
 
         // Expand a category and select a function
         app.expand_category("System");
@@ -825,7 +847,7 @@ mod tests {
     #[test]
     fn test_app_search_mode() {
         let functions = create_test_functions();
-        let mut app = App::new(functions, "Test".to_string());
+        let mut app = App::new(functions, "Test".to_string(), test_theme());
 
         assert!(!app.search_mode);
         assert_eq!(app.search_query, "");
@@ -851,7 +873,7 @@ mod tests {
     #[test]
     fn test_app_output_scroll() {
         let functions = create_test_functions();
-        let mut app = App::new(functions, "Test".to_string());
+        let mut app = App::new(functions, "Test".to_string(), test_theme());
 
         assert_eq!(app.output_scroll, 0);
 
@@ -878,7 +900,7 @@ mod tests {
     #[test]
     fn test_app_toggle_info() {
         let functions = create_test_functions();
-        let mut app = App::new(functions, "Test".to_string());
+        let mut app = App::new(functions, "Test".to_string(), test_theme());
 
         assert!(!app.show_info);
 
@@ -892,7 +914,7 @@ mod tests {
     #[test]
     fn test_app_tree_items_collapsed() {
         let functions = create_test_functions();
-        let app = App::new(functions, "Test".to_string());
+        let app = App::new(functions, "Test".to_string(), test_theme());
 
         let items = app.tree_items();
         // Should only show categories when collapsed
@@ -907,7 +929,7 @@ mod tests {
     #[test]
     fn test_app_tree_items_expanded() {
         let functions = create_test_functions();
-        let mut app = App::new(functions, "Test".to_string());
+        let mut app = App::new(functions, "Test".to_string(), test_theme());
 
         app.expand_category("System");
 
@@ -919,7 +941,7 @@ mod tests {
     #[test]
     fn test_app_selected_item() {
         let functions = create_test_functions();
-        let app = App::new(functions, "Test".to_string());
+        let app = App::new(functions, "Test".to_string(), test_theme());
 
         let item = app.selected_item();
         assert!(item.is_some());
@@ -933,7 +955,7 @@ mod tests {
     #[test]
     fn test_app_handle_left_right() {
         let functions = create_test_functions();
-        let mut app = App::new(functions, "Test".to_string());
+        let mut app = App::new(functions, "Test".to_string(), test_theme());
 
         // Initially not expanded
         assert!(!app.is_category_expanded("System"));
@@ -952,7 +974,7 @@ mod tests {
 
     #[test]
     fn test_app_empty_functions() {
-        let app = App::new(vec![], "Test".to_string());
+        let app = App::new(vec![], "Test".to_string(), test_theme());
 
         assert_eq!(app.functions.len(), 0);
         assert_eq!(app.categories().len(), 0);
@@ -962,7 +984,7 @@ mod tests {
     #[test]
     fn test_app_search_filtering() {
         let functions = create_test_functions();
-        let mut app = App::new(functions, "Test".to_string());
+        let mut app = App::new(functions, "Test".to_string(), test_theme());
 
         app.enter_search_mode();
         app.search_push_char('f');
@@ -981,7 +1003,7 @@ mod tests {
     #[test]
     fn test_app_frequent_functions() {
         let functions = create_test_functions();
-        let mut app = App::new(functions.clone(), "Test".to_string());
+        let mut app = App::new(functions.clone(), "Test".to_string(), test_theme());
 
         // No frequent functions initially
         assert!(app.frequent_functions.is_empty());
@@ -998,7 +1020,7 @@ mod tests {
     #[test]
     fn test_app_tree_items_with_frequent() {
         let functions = create_test_functions();
-        let mut app = App::new(functions.clone(), "Test".to_string());
+        let mut app = App::new(functions.clone(), "Test".to_string(), test_theme());
 
         // Set frequent functions
         app.set_frequent_functions(vec![functions[0].clone()]);
@@ -1030,7 +1052,7 @@ mod tests {
     #[test]
     fn test_app_frequent_search_filtering() {
         let functions = create_test_functions();
-        let mut app = App::new(functions.clone(), "Test".to_string());
+        let mut app = App::new(functions.clone(), "Test".to_string(), test_theme());
 
         // Set all functions as frequent
         app.set_frequent_functions(functions.clone());
@@ -1052,14 +1074,14 @@ mod tests {
     #[test]
     fn test_app_execution_status_idle() {
         let functions = create_test_functions();
-        let app = App::new(functions, "Test".to_string());
+        let app = App::new(functions, "Test".to_string(), test_theme());
         assert_eq!(app.current_execution_status(), ExecutionStatus::Idle);
     }
 
     #[test]
     fn test_app_mouse_selection() {
         let functions = create_test_functions();
-        let mut app = App::new(functions, "Test".to_string());
+        let mut app = App::new(functions, "Test".to_string(), test_theme());
 
         assert!(!app.mouse_selecting);
 
@@ -1080,7 +1102,7 @@ mod tests {
     #[test]
     fn test_app_focus_clears_mouse_selection() {
         let functions = create_test_functions();
-        let mut app = App::new(functions, "Test".to_string());
+        let mut app = App::new(functions, "Test".to_string(), test_theme());
 
         app.mouse_selecting = true;
         app.mouse_sel_start = Some((0, 0));

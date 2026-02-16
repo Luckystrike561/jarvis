@@ -41,9 +41,11 @@
 //! - Mouse drag selection with automatic clipboard copy
 
 pub mod app;
+pub mod config;
 pub mod pty_runner;
 pub mod render;
 pub mod terminal_widget;
+pub mod theme;
 
 pub use app::App;
 pub use render::render;

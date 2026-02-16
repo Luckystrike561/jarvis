@@ -34,6 +34,7 @@ chrono = { version = "0.4", features = ["serde"] }
 portable-pty = "0.9"
 vt100 = "0.16"
 base64 = "0.22"
+catppuccin = "2.6"
 
 # Clippy lint configuration
 # Run: cargo clippy
