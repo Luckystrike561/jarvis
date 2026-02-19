@@ -547,17 +547,24 @@ async fn run_application(args: Args) -> Result<()> {
 
     // Run the app and ensure cleanup happens even on error
     let mut event_reader = CrosstermEventReader;
+    let mut deferred_warnings = Vec::new();
     let run_result = run_app(
         &mut terminal,
         &mut app,
         &script_files,
         &mut event_reader,
         usage_tracker.clone(),
+        &mut deferred_warnings,
     )
     .await;
 
     // Restore terminal (always runs, even if run_app failed)
     let cleanup_result = cleanup_terminal(&mut terminal);
+
+    // Print any warnings that occurred while the TUI was active
+    for warning in &deferred_warnings {
+        eprintln!("Warning: {}", warning);
+    }
 
     // Return the first error that occurred, or Ok if both succeeded
     run_result?;
@@ -999,6 +1006,7 @@ async fn run_app(
     script_files: &[script::ScriptFile],
     event_reader: &mut dyn EventReader,
     usage_tracker: Option<Arc<Mutex<UsageTracker>>>,
+    deferred_warnings: &mut Vec<String>,
 ) -> Result<()> {
     // Track whether we need to record usage for completed commands
     let mut pending_usage_record: Option<(String, script::ScriptType, String)> = None;
@@ -1029,7 +1037,7 @@ async fn run_app(
             if let Some(ref tracker) = usage_tracker {
                 if let Ok(mut tracker_guard) = tracker.lock() {
                     if let Err(e) = tracker_guard.record(&func_name, script_type, &category) {
-                        eprintln!("Warning: Failed to record usage: {}", e);
+                        deferred_warnings.push(format!("Failed to record usage: {}", e));
                     }
                 }
             }
@@ -1103,7 +1111,8 @@ async fn run_app(
                             theme: app.theme.name.to_string(),
                         };
                         if let Err(e) = config.save() {
-                            eprintln!("Warning: Failed to save theme config: {}", e);
+                            deferred_warnings
+                                .push(format!("Failed to save theme config: {}", e));
                         }
                     }
                     _ => {}

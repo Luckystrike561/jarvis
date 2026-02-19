@@ -28,6 +28,7 @@ use ratatui::style::Color;
 
 /// All colors used by the Jarvis TUI, grouped by semantic role.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct Theme {
     /// Human-readable name displayed in the theme picker.
     pub name: &'static str,
@@ -211,9 +212,9 @@ static BUILT_IN_THEMES: [Theme; 11] = [
         fg_dim: Color::Rgb(110, 106, 134),
         accent: Color::Rgb(156, 207, 216),    // foam
         secondary: Color::Rgb(246, 193, 119), // gold
-        success: Color::Rgb(156, 207, 216),
+        success: Color::Rgb(49, 116, 143),    // pine (distinct from accent/foam)
         error: Color::Rgb(235, 111, 146),
-        selection_bg: Color::Rgb(38, 35, 58),
+        selection_bg: Color::Rgb(57, 53, 82), // overlay
     },
 ];
 

@@ -542,7 +542,6 @@ fn render_theme_picker(frame: &mut Frame, app: &App, area: Rect) {
     let preview_theme = &app.theme;
 
     // Build the list items
-    let visible_lines = modal_height.saturating_sub(4) as usize; // borders (2) + help line (1) + title (1)
     let items: Vec<ListItem> = themes
         .iter()
         .enumerate()
@@ -561,8 +560,6 @@ fn render_theme_picker(frame: &mut Frame, app: &App, area: Rect) {
             ListItem::new(label).style(style)
         })
         .collect();
-
-    let _ = visible_lines; // used implicitly by ratatui list clipping
 
     let help_line = Line::from(vec![Span::styled(
         " [\u{2191}\u{2193}] Navigate  [Enter] Apply  [Esc] Cancel",
