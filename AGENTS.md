@@ -1,10 +1,5 @@
 # Agent Development Guide for Jarvis
 
-## MANDATORY: Use td for Task Management
-
-You must run td usage --new-session at conversation start (or after /clear) to see current work.
-Use td usage -q for subsequent reads.
-
 ## Build/Test/Lint Commands
 ```bash
 cargo build                    # Debug build
