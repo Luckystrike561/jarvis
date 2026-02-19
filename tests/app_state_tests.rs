@@ -6,6 +6,7 @@
 use jarvis::script::{format_display_name, ScriptFunction, ScriptType};
 use jarvis::ui::app::FocusPane;
 use jarvis::ui::pty_runner::{ExecutionState, ExecutionStatus};
+use jarvis::ui::theme::Theme;
 use jarvis::ui::App;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -18,7 +19,7 @@ fn create_test_app() -> App {
             display_name: "Test Function 1".to_string(),
             category: "test_category".to_string(),
             description: "Test description 1".to_string(),
-            emoji: Some("🚀".to_string()),
+            emoji: Some("\u{1f680}".to_string()),
             ignored: false,
             script_type: ScriptType::Bash,
         },
@@ -32,7 +33,11 @@ fn create_test_app() -> App {
             script_type: ScriptType::Bash,
         },
     ];
-    App::new(functions, "Test Project".to_string())
+    App::new(
+        functions,
+        "Test Project".to_string(),
+        Theme::default_theme().clone(),
+    )
 }
 
 #[tokio::test]

@@ -22,6 +22,7 @@ A beautiful TUI for managing and executing scripts with zero configuration.
 
 - **Zero Configuration** - Auto-discovers bash functions, npm scripts, devbox scripts, Taskfile tasks, Makefile targets, Justfile recipes, Cargo commands, Nx targets, and Terraform/OpenTofu commands
 - **Beautiful TUI** - Modern terminal interface built with Ratatui
+- **11 Built-in Themes** - Catppuccin Mocha/Macchiato/Frappe, Dracula, Nord, Tokyo Night, Solarized Dark, Gruvbox Dark, One Dark, Monokai, and Rose Pine with live preview picker
 - **Multi-Language Support** - Works with `.sh` files, `package.json`, `devbox.json`, `Taskfile.yml`, `Makefile`, `justfile`, `Cargo.toml`, Nx workspaces (`nx.json`/`project.json`), and Terraform/OpenTofu (`.tf` files)
 - **Single Binary** - Compile once, run anywhere
 
@@ -78,8 +79,15 @@ jarvis --path /path/to/project
 | `h/l` or `←/→` | Collapse/Expand |
 | `Enter` | Select/Execute |
 | `/` | Search |
+| `t` | Theme picker |
 | `Tab` | Switch panes |
 | `q` | Quit |
+
+### Themes
+
+Press `t` to open the theme picker. Use `↑/↓` to browse themes with live preview, `Enter` to apply, or `Esc` to cancel. Your selection is saved to `~/.config/jarvis/config.json` and persists across sessions.
+
+**Built-in themes:** Catppuccin Mocha (default), Catppuccin Macchiato, Catppuccin Frappe, Dracula, Nord, Tokyo Night, Solarized Dark, Gruvbox Dark, One Dark, Monokai, Rose Pine.
 
 ## Script Discovery
 

@@ -50,6 +50,8 @@ pub struct TerminalView<'a> {
     selection_active: bool,
     selection_start: Option<(usize, usize)>,
     selection_end: Option<(usize, usize)>,
+    /// Background color for selected text (from theme)
+    selection_bg_color: Color,
 }
 
 impl<'a> TerminalView<'a> {
@@ -60,6 +62,7 @@ impl<'a> TerminalView<'a> {
             selection_active: false,
             selection_start: None,
             selection_end: None,
+            selection_bg_color: Color::Rgb(60, 60, 80),
         }
     }
 
@@ -77,6 +80,11 @@ impl<'a> TerminalView<'a> {
         self.selection_active = active;
         self.selection_start = start;
         self.selection_end = end;
+        self
+    }
+
+    pub fn selection_bg(mut self, color: Color) -> Self {
+        self.selection_bg_color = color;
         self
     }
 
@@ -177,7 +185,7 @@ impl Widget for TerminalView<'_> {
 
                         // Apply selection highlight (mouse drag)
                         if self.is_selected(display_y, display_x) {
-                            style = style.bg(Color::Rgb(60, 60, 80));
+                            style = style.bg(self.selection_bg_color);
                         }
 
                         cells.push((buf_x, buf_y, ch.to_string(), style));

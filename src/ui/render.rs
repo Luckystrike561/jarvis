@@ -38,9 +38,10 @@
 use crate::ui::app::{App, FocusPane, TreeItem};
 use crate::ui::pty_runner::ExecutionStatus;
 use crate::ui::terminal_widget::TerminalView;
+use crate::ui::theme::Theme;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
     Frame,
@@ -108,7 +109,14 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 
     // Render info modal on top if show_info is true
     if app.show_info {
-        render_info_modal(frame, frame.area());
+        let full_area = frame.area();
+        render_info_modal(frame, app, full_area);
+    }
+
+    // Render theme picker modal on top if show_theme_picker is true
+    if app.show_theme_picker {
+        let full_area = frame.area();
+        render_theme_picker(frame, app, full_area);
     }
 }
 
@@ -117,18 +125,21 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect) {
     let mut spans = vec![Span::styled(
         "  JARVIS  ",
         Style::default()
-            .fg(Color::Cyan)
+            .fg(app.theme.accent)
             .add_modifier(Modifier::BOLD),
     )];
 
     // Append selected item details inline
     match app.selected_item() {
         Some(TreeItem::Function(func)) => {
-            spans.push(Span::styled("│ ", Style::default().fg(Color::DarkGray)));
+            spans.push(Span::styled(
+                "\u{2502} ",
+                Style::default().fg(app.theme.fg_dim),
+            ));
             spans.push(Span::styled(
                 func.display_name.clone(),
                 Style::default()
-                    .fg(Color::Yellow)
+                    .fg(app.theme.secondary)
                     .add_modifier(Modifier::BOLD),
             ));
             if !func.description.is_empty() {
@@ -136,7 +147,7 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect) {
                 spans.push(Span::styled(
                     func.description.clone(),
                     Style::default()
-                        .fg(Color::White)
+                        .fg(app.theme.fg)
                         .add_modifier(Modifier::ITALIC),
                 ));
             }
@@ -148,16 +159,19 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect) {
                 .iter()
                 .filter(|f| f.category == category)
                 .count();
-            spans.push(Span::styled("│ ", Style::default().fg(Color::DarkGray)));
+            spans.push(Span::styled(
+                "\u{2502} ",
+                Style::default().fg(app.theme.fg_dim),
+            ));
             spans.push(Span::styled(
                 display_name,
                 Style::default()
-                    .fg(Color::Cyan)
+                    .fg(app.theme.accent)
                     .add_modifier(Modifier::BOLD),
             ));
             spans.push(Span::styled(
                 format!("  ({} functions)", count),
-                Style::default().fg(Color::Gray),
+                Style::default().fg(app.theme.fg_dim),
             ));
         }
         None => {}
@@ -169,23 +183,23 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Cyan)),
+                .border_style(Style::default().fg(app.theme.accent)),
         )
-        .style(Style::default().bg(Color::Black));
+        .style(Style::default().bg(app.theme.bg));
 
     frame.render_widget(header, area);
 }
 
 fn render_search_bar(frame: &mut Frame, app: &App, area: Rect) {
-    let search_text = format!("🔍 Search: {}", app.search_query);
+    let search_text = format!("\u{1f50d} Search: {}", app.search_query);
     let search_widget = Paragraph::new(search_text)
         .block(
             Block::default()
                 .borders(Borders::ALL)
                 .title("Press ESC to exit search")
-                .border_style(Style::default().fg(Color::Yellow)),
+                .border_style(Style::default().fg(app.theme.secondary)),
         )
-        .style(Style::default().fg(Color::Yellow));
+        .style(Style::default().fg(app.theme.secondary));
 
     frame.render_widget(search_widget, area);
 }
@@ -213,17 +227,17 @@ fn render_script_tree(frame: &mut Frame, app: &mut App, area: Rect) {
             let is_selected = actual_i == app.selected_index;
             let style = if is_selected {
                 Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::Cyan)
+                    .fg(app.theme.bg)
+                    .bg(app.theme.accent)
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(Color::White)
+                Style::default().fg(app.theme.fg)
             };
 
             match item {
                 TreeItem::Category(category) => {
                     let is_expanded = app.is_category_expanded(category);
-                    let icon = if is_expanded { "▼" } else { "▶" };
+                    let icon = if is_expanded { "\u{25bc}" } else { "\u{25b6}" };
                     // Use the display name from the app (which includes emoji from filename)
                     let display_name = app.get_category_display_name(category);
                     let content = format!("{} {}", icon, display_name);
@@ -243,21 +257,21 @@ fn render_script_tree(frame: &mut Frame, app: &mut App, area: Rect) {
         .collect();
 
     let border_color = if app.focus == FocusPane::ScriptList {
-        Color::Cyan
+        app.theme.accent
     } else {
-        Color::Gray
+        app.theme.fg_dim
     };
 
     // Create title with scroll position indicator if needed
     let title = if total_items > visible_height {
         format!(
-            "🤖 {} [{}/{}]",
+            "\u{1f916} {} [{}/{}]",
             app.project_title,
             start_idx + 1,
             total_items
         )
     } else {
-        format!("🤖 {}", app.project_title)
+        format!("\u{1f916} {}", app.project_title)
     };
 
     let list = List::new(items)
@@ -267,7 +281,7 @@ fn render_script_tree(frame: &mut Frame, app: &mut App, area: Rect) {
                 .title(title)
                 .border_style(Style::default().fg(border_color)),
         )
-        .style(Style::default().fg(Color::White));
+        .style(Style::default().fg(app.theme.fg));
 
     frame.render_widget(list, area);
 }
@@ -275,16 +289,16 @@ fn render_script_tree(frame: &mut Frame, app: &mut App, area: Rect) {
 /// Render a placeholder when no command has been run yet
 fn render_empty_output(frame: &mut Frame, app: &App, area: Rect) {
     let border_color = if app.focus == FocusPane::Output {
-        Color::Cyan
+        app.theme.accent
     } else {
-        Color::Gray
+        app.theme.fg_dim
     };
 
     let text = vec![
         Line::from(""),
         Line::from(vec![Span::styled(
             "  Select a function and press Enter to run it",
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(app.theme.fg_dim),
         )]),
     ];
 
@@ -292,7 +306,7 @@ fn render_empty_output(frame: &mut Frame, app: &App, area: Rect) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("💬 Output")
+                .title("\u{1f4ac} Output")
                 .border_style(Style::default().fg(border_color)),
         )
         .wrap(Wrap { trim: true });
@@ -319,18 +333,18 @@ fn render_terminal_output(frame: &mut Frame, app: &mut App, area: Rect) {
     let (border_color, border_modifier) = match status {
         ExecutionStatus::Idle => (
             if app.focus == FocusPane::Output {
-                Color::Cyan
+                app.theme.accent
             } else {
-                Color::Gray
+                app.theme.fg_dim
             },
             Modifier::empty(),
         ),
         ExecutionStatus::Running => {
             // Steady yellow border while running (spinner in title provides animation)
-            (Color::Yellow, Modifier::BOLD)
+            (app.theme.secondary, Modifier::BOLD)
         }
-        ExecutionStatus::Succeeded => (Color::Green, Modifier::BOLD),
-        ExecutionStatus::Failed => (Color::Red, Modifier::BOLD),
+        ExecutionStatus::Succeeded => (app.theme.success, Modifier::BOLD),
+        ExecutionStatus::Failed => (app.theme.error, Modifier::BOLD),
     };
 
     // Build title with status indicator
@@ -340,7 +354,7 @@ fn render_terminal_output(frame: &mut Frame, app: &mut App, area: Rect) {
         .unwrap_or("Command");
 
     let title = match status {
-        ExecutionStatus::Idle => "💬 Output".to_string(),
+        ExecutionStatus::Idle => "\u{1f4ac} Output".to_string(),
         ExecutionStatus::Running => {
             let spinner = SPINNER_CHARS[(app.animation_tick as usize) % SPINNER_CHARS.len()];
             format!("{} Running: {}", spinner, display_name)
@@ -396,7 +410,8 @@ fn render_terminal_output(frame: &mut Frame, app: &mut App, area: Rect) {
         let has_selection = app.mouse_sel_start.is_some() && app.mouse_sel_end.is_some();
         let terminal_view = TerminalView::new(parser)
             .scroll_offset(app.output_scroll)
-            .selection(has_selection, app.mouse_sel_start, app.mouse_sel_end);
+            .selection(has_selection, app.mouse_sel_start, app.mouse_sel_end)
+            .selection_bg(app.theme.selection_bg);
         frame.render_widget(terminal_view, inner_area);
     }
 
@@ -411,11 +426,11 @@ fn render_terminal_output(frame: &mut Frame, app: &mut App, area: Rect) {
 
 fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
     let help_text = if app.search_mode {
-        "[↑↓] Navigate  [Enter] Execute  [ESC] Exit Search  [Backspace] Delete"
+        "[\u{2191}\u{2193}] Navigate  [Enter] Execute  [ESC] Exit Search  [Backspace] Delete"
     } else {
         match app.focus {
             FocusPane::Details | FocusPane::ScriptList => {
-                "[↑↓/jk] Navigate  [←→/hl] Collapse/Expand  [/] Search  [i] Info  [Enter] Toggle/Execute  [Tab] Switch  [Q] Quit"
+                "[\u{2191}\u{2193}/jk] Navigate  [\u{2190}\u{2192}/hl] Collapse/Expand  [/] Search  [t] Theme  [i] Info  [Enter] Toggle/Execute  [Tab] Switch  [Q] Quit"
             }
             FocusPane::Output => {
                 "[jk] Scroll  [Ctrl+d/u] Half-page  [G] Bottom  [gg] Top  [Mouse] Select+Copy  [Esc/q] Back  [Tab] Switch"
@@ -424,13 +439,13 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
     };
 
     let footer = Paragraph::new(help_text)
-        .style(Style::default().fg(Color::Gray))
+        .style(Style::default().fg(app.theme.fg_dim))
         .block(Block::default());
 
     frame.render_widget(footer, area);
 }
 
-fn render_info_modal(frame: &mut Frame, area: Rect) {
+fn render_info_modal(frame: &mut Frame, app: &App, area: Rect) {
     // Get version from Cargo.toml at compile time
     let version = env!("CARGO_PKG_VERSION");
     let authors = env!("CARGO_PKG_AUTHORS");
@@ -458,35 +473,35 @@ fn render_info_modal(frame: &mut Frame, area: Rect) {
         Line::from(vec![Span::styled(
             "JARVIS",
             Style::default()
-                .fg(Color::Cyan)
+                .fg(app.theme.accent)
                 .add_modifier(Modifier::BOLD),
         )]),
         Line::from(vec![Span::styled(
             "Just Another Rather Very Intelligent System",
-            Style::default().fg(Color::White),
+            Style::default().fg(app.theme.fg),
         )]),
         Line::from(""),
-        Line::from("────────────────────────────────────────────────────────"),
+        Line::from("\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}"),
         Line::from(""),
         Line::from(vec![
-            Span::styled("Version: ", Style::default().fg(Color::Gray)),
-            Span::styled(version, Style::default().fg(Color::Yellow)),
+            Span::styled("Version: ", Style::default().fg(app.theme.fg_dim)),
+            Span::styled(version, Style::default().fg(app.theme.secondary)),
         ]),
         Line::from(vec![
-            Span::styled("Authors: ", Style::default().fg(Color::Gray)),
+            Span::styled("Authors: ", Style::default().fg(app.theme.fg_dim)),
             Span::raw(authors),
         ]),
         Line::from(""),
         Line::from(vec![Span::styled(
             description,
             Style::default()
-                .fg(Color::White)
+                .fg(app.theme.fg)
                 .add_modifier(Modifier::ITALIC),
         )]),
         Line::from(""),
         Line::from(vec![Span::styled(
             "Press [i] or [ESC] to close",
-            Style::default().fg(Color::Gray),
+            Style::default().fg(app.theme.fg_dim),
         )]),
     ];
 
@@ -495,9 +510,71 @@ fn render_info_modal(frame: &mut Frame, area: Rect) {
             Block::default()
                 .borders(Borders::ALL)
                 .title(" About ")
-                .border_style(Style::default().fg(Color::Cyan)),
+                .border_style(Style::default().fg(app.theme.accent)),
         )
-        .style(Style::default().bg(Color::Black));
+        .style(Style::default().bg(app.theme.bg));
 
     frame.render_widget(info_modal, modal_area);
+}
+
+fn render_theme_picker(frame: &mut Frame, app: &App, area: Rect) {
+    let themes = Theme::all();
+    let total = themes.len();
+
+    // Modal size: enough for all themes + borders + title + help text
+    let modal_width: u16 = 40;
+    let modal_height: u16 = (total as u16 + 4).min(area.height.saturating_sub(4));
+    let modal_x = (area.width.saturating_sub(modal_width)) / 2;
+    let modal_y = (area.height.saturating_sub(modal_height)) / 2;
+
+    let modal_area = Rect {
+        x: modal_x,
+        y: modal_y,
+        width: modal_width,
+        height: modal_height,
+    };
+
+    // Clear the background
+    frame.render_widget(Clear, modal_area);
+
+    // The preview theme is the one currently highlighted (for live preview, app.theme
+    // is already set to this in the event loop).
+    let preview_theme = &app.theme;
+
+    // Build the list items
+    let items: Vec<ListItem> = themes
+        .iter()
+        .enumerate()
+        .map(|(i, theme)| {
+            let is_selected = i == app.theme_picker_index;
+            let marker = if is_selected { "\u{25b6} " } else { "  " };
+            let label = format!("{}{}", marker, theme.name);
+            let style = if is_selected {
+                Style::default()
+                    .fg(preview_theme.bg)
+                    .bg(preview_theme.accent)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(preview_theme.fg)
+            };
+            ListItem::new(label).style(style)
+        })
+        .collect();
+
+    let help_line = Line::from(vec![Span::styled(
+        " [\u{2191}\u{2193}] Navigate  [Enter] Apply  [Esc] Cancel",
+        Style::default().fg(preview_theme.fg_dim),
+    )]);
+
+    let list = List::new(items)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Theme ")
+                .title_bottom(help_line)
+                .border_style(Style::default().fg(preview_theme.accent)),
+        )
+        .style(Style::default().bg(preview_theme.bg));
+
+    frame.render_widget(list, modal_area);
 }

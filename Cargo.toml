@@ -56,4 +56,5 @@ manual_string_new = "warn"
 doc_markdown = "warn"
 
 [dev-dependencies]
+catppuccin = "2.6"
 tempfile = "3"
