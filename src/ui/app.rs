@@ -685,7 +685,7 @@ mod tests {
     use crate::script::ScriptType;
 
     fn test_theme() -> Theme {
-        Theme::default_theme().clone()
+        *Theme::default_theme()
     }
 
     fn create_test_functions() -> Vec<ScriptFunction> {

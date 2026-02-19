@@ -498,9 +498,8 @@ async fn run_application(args: Args) -> Result<()> {
 
     // Load theme from config
     let config = ui::config::Config::load();
-    let theme = ui::theme::Theme::by_name(&config.theme)
-        .unwrap_or_else(ui::theme::Theme::default_theme)
-        .clone();
+    let theme = *ui::theme::Theme::by_name(&config.theme)
+        .unwrap_or_else(ui::theme::Theme::default_theme);
 
     let mut app = App::new(all_functions.clone(), formatted_project_name, theme);
 
@@ -1081,7 +1080,7 @@ async fn run_app(
                     KeyCode::Esc | KeyCode::Char('t') => {
                         // Cancel: restore the previous theme
                         if let Some(ref saved) = theme_before_picker {
-                            app.theme = saved.clone();
+                            app.theme = *saved;
                             app.theme_picker_index = themes
                                 .iter()
                                 .position(|t| t.name == saved.name)
@@ -1093,7 +1092,7 @@ async fn run_app(
                     KeyCode::Down | KeyCode::Char('j') => {
                         app.theme_picker_index = (app.theme_picker_index + 1) % themes.len();
                         // Live preview: apply the highlighted theme immediately
-                        app.theme = themes[app.theme_picker_index].clone();
+                        app.theme = themes[app.theme_picker_index];
                     }
                     KeyCode::Up | KeyCode::Char('k') => {
                         if app.theme_picker_index == 0 {
@@ -1101,7 +1100,7 @@ async fn run_app(
                         } else {
                             app.theme_picker_index -= 1;
                         }
-                        app.theme = themes[app.theme_picker_index].clone();
+                        app.theme = themes[app.theme_picker_index];
                     }
                     KeyCode::Enter => {
                         // Confirm: keep the current theme and save config
@@ -1111,8 +1110,7 @@ async fn run_app(
                             theme: app.theme.name.to_string(),
                         };
                         if let Err(e) = config.save() {
-                            deferred_warnings
-                                .push(format!("Failed to save theme config: {}", e));
+                            deferred_warnings.push(format!("Failed to save theme config: {}", e));
                         }
                     }
                     _ => {}
@@ -1256,7 +1254,7 @@ async fn run_app(
                     }
                     KeyCode::Char('t') => {
                         // Open theme picker
-                        theme_before_picker = Some(app.theme.clone());
+                        theme_before_picker = Some(app.theme);
                         app.show_theme_picker = true;
                     }
                     KeyCode::Tab => {

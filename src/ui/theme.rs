@@ -27,7 +27,7 @@
 use ratatui::style::Color;
 
 /// All colors used by the Jarvis TUI, grouped by semantic role.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 #[non_exhaustive]
 pub struct Theme {
     /// Human-readable name displayed in the theme picker.
