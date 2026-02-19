@@ -498,8 +498,8 @@ async fn run_application(args: Args) -> Result<()> {
 
     // Load theme from config
     let config = ui::config::Config::load();
-    let theme = *ui::theme::Theme::by_name(&config.theme)
-        .unwrap_or_else(ui::theme::Theme::default_theme);
+    let theme =
+        *ui::theme::Theme::by_name(&config.theme).unwrap_or_else(ui::theme::Theme::default_theme);
 
     let mut app = App::new(all_functions.clone(), formatted_project_name, theme);
 
