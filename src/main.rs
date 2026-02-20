@@ -417,6 +417,28 @@ async fn run_application(args: Args) -> Result<()> {
                         Err(e) => ParseResult::Error(path.display().to_string(), e),
                     }
                 }
+                script::ScriptType::Gradle => {
+                    let project_dir = path.parent().unwrap_or(&path).to_path_buf();
+                    match script::list_gradle_tasks(&project_dir, &category) {
+                        Ok(tasks) => {
+                            let functions: Vec<script::ScriptFunction> = tasks
+                                .into_iter()
+                                .filter(|t| !t.ignored)
+                                .map(|t| script::ScriptFunction {
+                                    name: t.name,
+                                    display_name: t.display_name,
+                                    category: t.category,
+                                    description: t.description,
+                                    emoji: t.emoji,
+                                    ignored: t.ignored,
+                                    script_type: script::ScriptType::Gradle,
+                                })
+                                .collect();
+                            ParseResult::Functions(functions)
+                        }
+                        Err(e) => ParseResult::Error(path.display().to_string(), e),
+                    }
+                }
             })
         })
         .collect();

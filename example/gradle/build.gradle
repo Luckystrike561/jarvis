@@ -1,0 +1,31 @@
+plugins {
+    id 'java'
+}
+
+group = 'com.example'
+version = '0.1.0'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+}
+
+tasks.register('hello') {
+    doLast {
+        println 'Hello from Gradle!'
+    }
+}
+
+tasks.register('buildInfo') {
+    doLast {
+        println "Building project: ${project.name}"
+        println "Version: ${project.version}"
+    }
+}

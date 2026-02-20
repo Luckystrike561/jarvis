@@ -16,20 +16,13 @@
 //! | Cargo | `Cargo.toml` | [`cargo_parser::list_targets`] |
 //! | Nx | `nx.json` | [`nx_parser::list_targets`] |
 //! | Terraform / `OpenTofu` | `*.tf` | [`terraform_parser::list_commands`] |
+//! | Gradle | `build.gradle`, `build.gradle.kts` | [`gradle_parser::list_tasks`] |
 //!
-//! ## Discovery
-//!
-//! Scripts are automatically discovered from:
-//! - Root directory (`./`) - shallow scan
-//! - `./script/` subdirectory
-//! - `./scripts/` subdirectory
-//! - `./jarvis/` subdirectory
-//!
-//! See [`discovery`] module for details.
 
 pub mod cargo_parser;
 pub mod devbox_parser;
 pub mod discovery;
+pub mod gradle_parser;
 pub mod just_parser;
 pub mod makefile_parser;
 pub mod npm_parser;
@@ -45,6 +38,7 @@ pub use discovery::{
     discover_scripts, discover_scripts_shallow, discover_single_file, format_display_name,
     prewarm_tool_checks, ScriptFile, ScriptType,
 };
+pub use gradle_parser::list_tasks as list_gradle_tasks;
 pub use just_parser::list_recipes as list_just_recipes;
 pub use makefile_parser::list_targets as list_make_targets;
 pub use npm_parser::parse_package_json;

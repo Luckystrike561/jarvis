@@ -237,6 +237,15 @@ fn build_command(
                 .to_string();
             Ok((binary, args, dir))
         }
+        ScriptType::Gradle => {
+            let dir = path
+                .parent()
+                .context("Failed to get parent dir")?
+                .to_path_buf();
+            let gradle_cmd = script::gradle_parser::get_gradle_command(&dir)
+                .unwrap_or_else(|| "gradle".to_string());
+            Ok((gradle_cmd, vec![func.name.clone()], dir))
+        }
     }
 }
 
