@@ -237,6 +237,20 @@ fn build_command(
                 .to_string();
             Ok((binary, args, dir))
         }
+        ScriptType::Bazel => {
+            let dir = path
+                .parent()
+                .context("Failed to get parent dir")?
+                .to_path_buf();
+            let bazel_cmd =
+                script::bazel_parser::get_bazel_command().unwrap_or_else(|| "bazel".to_string());
+            let (action, target) = if func.name.contains("_test") || func.name.ends_with("_test") {
+                ("test", func.name.as_str())
+            } else {
+                ("run", func.name.as_str())
+            };
+            Ok((bazel_cmd, vec![action.to_string(), target.to_string()], dir))
+        }
     }
 }
 

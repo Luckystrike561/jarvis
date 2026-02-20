@@ -45,13 +45,14 @@ use walkdir::WalkDir;
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum ScriptType {
     Bash,
-    PackageJson,
-    DevboxJson,
-    Task,
-    Makefile,
-    Just,
+    Bazel,
     CargoToml,
+    DevboxJson,
+    Just,
+    Makefile,
     NxJson,
+    PackageJson,
+    Task,
     Terraform,
 }
 
@@ -89,13 +90,48 @@ const CARGO_TOML_NAMES: &[&str] = &["Cargo.toml"];
 /// Nx workspace config names to detect
 const NX_JSON_NAMES: &[&str] = &["nx.json"];
 
+/// Bazel workspace config names to detect
+const BAZEL_NAMES: &[&str] = &[
+    "WORKSPACE",
+    "WORKSPACE.bazel",
+    "MODULE.bazel",
+    "BUILD",
+    "BUILD.bazel",
+];
+
 /// Cache for devbox availability check (checked once per process)
 static DEVBOX_AVAILABLE: OnceLock<bool> = OnceLock::new();
+
+/// Cache for bazel availability check (checked once per process)
+static BAZEL_AVAILABLE: OnceLock<bool> = OnceLock::new();
 
 /// Check if devbox is installed and available in PATH
 fn is_devbox_available() -> bool {
     *DEVBOX_AVAILABLE.get_or_init(|| {
         Command::new("devbox")
+            .arg("version")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false)
+    })
+}
+
+/// Check if bazel or bazelisk is installed and available in PATH
+fn is_bazel_available() -> bool {
+    *BAZEL_AVAILABLE.get_or_init(|| {
+        if Command::new("bazelisk")
+            .arg("version")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false)
+        {
+            return true;
+        }
+        Command::new("bazel")
             .arg("version")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -111,6 +147,7 @@ fn is_devbox_available() -> bool {
 /// discovery needs the results, they're already cached in the `OnceLock` statics.
 pub fn prewarm_tool_checks() {
     std::thread::spawn(is_devbox_available);
+    std::thread::spawn(is_bazel_available);
     std::thread::spawn(crate::script::task_parser::is_task_available);
     std::thread::spawn(crate::script::makefile_parser::is_make_available);
     std::thread::spawn(crate::script::just_parser::is_just_available);
@@ -208,7 +245,8 @@ pub fn discover_single_file(file_path: &Path) -> Result<ScriptFile> {
         | ScriptType::Just
         | ScriptType::CargoToml
         | ScriptType::NxJson
-        | ScriptType::Terraform => {
+        | ScriptType::Terraform
+        | ScriptType::Bazel => {
             // For JSON/YAML config files and Makefile, use the parent directory name or the filename
             if let Some(parent) = file_path.parent() {
                 parent
@@ -238,6 +276,7 @@ pub fn discover_single_file(file_path: &Path) -> Result<ScriptFile> {
         ScriptType::CargoToml => format!("🦀 {}", format_display_name(&name)),
         ScriptType::NxJson => format!("🔷 {}", format_display_name(&name)),
         ScriptType::Terraform => format!("🏗️ {}", format_display_name(&name)),
+        ScriptType::Bazel => format!("🌿 {}", format_display_name(&name)),
         _ => format_display_name(&name),
     };
 
@@ -315,6 +354,16 @@ fn determine_script_type(filename: &str, file_path: &Path) -> Result<ScriptType>
             );
         }
         return Ok(ScriptType::NxJson);
+    }
+
+    if BAZEL_NAMES.contains(&filename) {
+        if !is_bazel_available() {
+            anyhow::bail!(
+                "Bazel workspace file found but neither 'bazel' nor 'bazelisk' is installed or in PATH. \
+                Please install Bazel or Bazelisk to use this file."
+            );
+        }
+        return Ok(ScriptType::Bazel);
     }
 
     // Check file extension for .sh files
@@ -572,6 +621,34 @@ fn discover_scripts_with_depth(scripts_dir: &Path, max_depth: usize) -> Result<V
                     category,
                     display_name,
                     script_type: ScriptType::NxJson,
+                });
+                continue;
+            }
+
+            if BAZEL_NAMES.contains(&filename) {
+                if !is_bazel_available() {
+                    continue;
+                }
+
+                let name = if let Some(parent) = path.parent() {
+                    parent
+                        .file_name()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("bazel")
+                        .to_string()
+                } else {
+                    "bazel".to_string()
+                };
+
+                let category = name.clone();
+                let display_name = format!("🌿 {}", format_display_name(&name));
+
+                scripts.push(ScriptFile {
+                    path: path.to_path_buf(),
+                    name,
+                    category,
+                    display_name,
+                    script_type: ScriptType::Bazel,
                 });
                 continue;
             }
@@ -1135,5 +1212,87 @@ tasks:
             .collect();
         // Even with multiple .tf files, we should get at most one entry
         assert!(tf_files.len() <= 1);
+    }
+
+    #[test]
+    fn test_discover_bazel_workspace() {
+        let temp_dir = TempDir::new().unwrap();
+
+        fs::write(
+            temp_dir.path().join("WORKSPACE"),
+            "workspace(name = \"test\")",
+        )
+        .unwrap();
+        fs::write(
+            temp_dir.path().join("BUILD"),
+            "cc_binary(name = \"hello\", srcs = [\"hello.c\"])",
+        )
+        .unwrap();
+
+        let result = discover_scripts(temp_dir.path()).unwrap();
+        let bazel_files: Vec<_> = result
+            .iter()
+            .filter(|s| s.script_type == ScriptType::Bazel)
+            .collect();
+        assert!(
+            bazel_files.len() <= 1,
+            "should have at most one Bazel script file per directory"
+        );
+        if let Some(sf) = bazel_files.first() {
+            assert_eq!(sf.script_type, ScriptType::Bazel);
+            assert!(sf.display_name.contains("🌿"));
+        }
+    }
+
+    #[test]
+    fn test_discover_bazel_build_bazel() {
+        let temp_dir = TempDir::new().unwrap();
+
+        fs::write(
+            temp_dir.path().join("WORKSPACE.bazel"),
+            "workspace(name = \"test\")",
+        )
+        .unwrap();
+        fs::write(
+            temp_dir.path().join("BUILD.bazel"),
+            "cc_binary(name = \"hello\", srcs = [\"hello.c\"])",
+        )
+        .unwrap();
+
+        let result = discover_scripts(temp_dir.path()).unwrap();
+        let bazel_files: Vec<_> = result
+            .iter()
+            .filter(|s| s.script_type == ScriptType::Bazel)
+            .collect();
+        assert!(
+            bazel_files.len() <= 1,
+            "should have at most one Bazel script file per directory"
+        );
+    }
+
+    #[test]
+    fn test_discover_bazel_module_bazel() {
+        let temp_dir = TempDir::new().unwrap();
+
+        fs::write(
+            temp_dir.path().join("MODULE.bazel"),
+            "module(name = \"test\")",
+        )
+        .unwrap();
+        fs::write(
+            temp_dir.path().join("BUILD.bazel"),
+            "cc_binary(name = \"hello\", srcs = [\"hello.c\"])",
+        )
+        .unwrap();
+
+        let result = discover_scripts(temp_dir.path()).unwrap();
+        let bazel_files: Vec<_> = result
+            .iter()
+            .filter(|s| s.script_type == ScriptType::Bazel)
+            .collect();
+        assert!(
+            bazel_files.len() <= 1,
+            "should have at most one Bazel script file per directory"
+        );
     }
 }
