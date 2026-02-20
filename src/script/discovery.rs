@@ -53,6 +53,7 @@ pub enum ScriptType {
     CargoToml,
     NxJson,
     Terraform,
+    Gradle,
 }
 
 #[derive(Debug, Clone)]
@@ -89,6 +90,18 @@ const CARGO_TOML_NAMES: &[&str] = &["Cargo.toml"];
 /// Nx workspace config names to detect
 const NX_JSON_NAMES: &[&str] = &["nx.json"];
 
+/// Gradle build file names to detect
+const GRADLE_BUILD_NAMES: &[&str] = &[
+    "build.gradle",
+    "build.gradle.kts",
+];
+
+/// Gradle settings file names to detect
+const GRADLE_SETTINGS_NAMES: &[&str] = &[
+    "settings.gradle",
+    "settings.gradle.kts",
+];
+
 /// Cache for devbox availability check (checked once per process)
 static DEVBOX_AVAILABLE: OnceLock<bool> = OnceLock::new();
 
@@ -117,6 +130,7 @@ pub fn prewarm_tool_checks() {
     std::thread::spawn(crate::script::cargo_parser::is_cargo_available);
     std::thread::spawn(crate::script::nx_parser::is_nx_available);
     std::thread::spawn(crate::script::terraform_parser::is_terraform_available);
+    std::thread::spawn(crate::script::gradle_parser::is_gradle_available);
 }
 
 /// Formats a filename into a display-friendly name
@@ -208,7 +222,8 @@ pub fn discover_single_file(file_path: &Path) -> Result<ScriptFile> {
         | ScriptType::Just
         | ScriptType::CargoToml
         | ScriptType::NxJson
-        | ScriptType::Terraform => {
+        | ScriptType::Terraform
+        | ScriptType::Gradle => {
             // For JSON/YAML config files and Makefile, use the parent directory name or the filename
             if let Some(parent) = file_path.parent() {
                 parent
@@ -238,6 +253,7 @@ pub fn discover_single_file(file_path: &Path) -> Result<ScriptFile> {
         ScriptType::CargoToml => format!("🦀 {}", format_display_name(&name)),
         ScriptType::NxJson => format!("🔷 {}", format_display_name(&name)),
         ScriptType::Terraform => format!("🏗️ {}", format_display_name(&name)),
+        ScriptType::Gradle => format!("🐘 {}", format_display_name(&name)),
         _ => format_display_name(&name),
     };
 
@@ -315,6 +331,16 @@ fn determine_script_type(filename: &str, file_path: &Path) -> Result<ScriptType>
             );
         }
         return Ok(ScriptType::NxJson);
+    }
+
+    if GRADLE_BUILD_NAMES.contains(&filename) || GRADLE_SETTINGS_NAMES.contains(&filename) {
+        if !crate::script::gradle_parser::is_gradle_available() {
+            anyhow::bail!(
+                "Gradle build file found but neither Gradle wrapper (gradlew) nor system Gradle is available. \
+                Please install Gradle or add a Gradle wrapper to use this file."
+            );
+        }
+        return Ok(ScriptType::Gradle);
     }
 
     // Check file extension for .sh files
@@ -572,6 +598,34 @@ fn discover_scripts_with_depth(scripts_dir: &Path, max_depth: usize) -> Result<V
                     category,
                     display_name,
                     script_type: ScriptType::NxJson,
+                });
+                continue;
+            }
+
+            if GRADLE_BUILD_NAMES.contains(&filename) || GRADLE_SETTINGS_NAMES.contains(&filename) {
+                if !crate::script::gradle_parser::is_gradle_available() {
+                    continue;
+                }
+
+                let name = if let Some(parent) = path.parent() {
+                    parent
+                        .file_name()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("gradle")
+                        .to_string()
+                } else {
+                    "gradle".to_string()
+                };
+
+                let category = name.clone();
+                let display_name = format!("🐘 {}", format_display_name(&name));
+
+                scripts.push(ScriptFile {
+                    path: path.to_path_buf(),
+                    name,
+                    category,
+                    display_name,
+                    script_type: ScriptType::Gradle,
                 });
                 continue;
             }
