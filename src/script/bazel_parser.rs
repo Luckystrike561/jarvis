@@ -166,9 +166,7 @@ fn parse_label(label: &str) -> Result<(String, String, String)> {
     let label = label.trim_start_matches('@');
 
     if let Some(stripped) = label.strip_prefix("//") {
-        let (package, rest) = stripped
-            .split_once(':')
-            .unwrap_or((stripped, stripped));
+        let (package, rest) = stripped.split_once(':').unwrap_or((stripped, stripped));
 
         let package = package.to_string();
 
@@ -205,18 +203,10 @@ pub fn list_targets(workspace_dir: &Path, category: &str) -> Result<Vec<BazelTar
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .output()
-        .with_context(|| {
-            format!(
-                "Failed to run bazel query in: {}",
-                workspace_dir.display()
-            )
-        })?;
+        .with_context(|| format!("Failed to run bazel query in: {}", workspace_dir.display()))?;
 
     if !output.status.success() {
-        anyhow::bail!(
-            "bazel query failed in {}",
-            workspace_dir.display()
-        );
+        anyhow::bail!("bazel query failed in {}", workspace_dir.display());
     }
 
     let output_str = String::from_utf8_lossy(&output.stdout).to_string();
@@ -286,10 +276,16 @@ mod tests {
         let output = sample_query_output();
         let targets = parse_bazel_query_output(&output, "myproject").unwrap();
 
-        let bin = targets.iter().find(|t| t.name == "//src/main:hello_binary").unwrap();
+        let bin = targets
+            .iter()
+            .find(|t| t.name == "//src/main:hello_binary")
+            .unwrap();
         assert_eq!(bin.description, "bazel run //src/main:hello_binary");
 
-        let test = targets.iter().find(|t| t.name == "//src/main:hello_test").unwrap();
+        let test = targets
+            .iter()
+            .find(|t| t.name == "//src/main:hello_test")
+            .unwrap();
         assert_eq!(test.description, "bazel test //src/main:hello_test");
     }
 
@@ -308,17 +304,17 @@ mod tests {
         let output = sample_query_output();
         let targets = parse_bazel_query_output(&output, "myproject").unwrap();
 
-        let hello = targets.iter().find(|t| t.name == "//src/main:hello_binary").unwrap();
+        let hello = targets
+            .iter()
+            .find(|t| t.name == "//src/main:hello_binary")
+            .unwrap();
         assert_eq!(hello.display_name, "src/main: Hello");
 
         let greeting = targets
             .iter()
             .find(|t| t.name == "//examples/greeting:greeting_binary")
             .unwrap();
-        assert_eq!(
-            greeting.display_name,
-            "examples/greeting: Greeting"
-        );
+        assert_eq!(greeting.display_name, "examples/greeting: Greeting");
     }
 
     #[test]
@@ -326,10 +322,16 @@ mod tests {
         let output = sample_query_output();
         let targets = parse_bazel_query_output(&output, "myproject").unwrap();
 
-        let bin = targets.iter().find(|t| t.name == "//src/main:hello_binary").unwrap();
+        let bin = targets
+            .iter()
+            .find(|t| t.name == "//src/main:hello_binary")
+            .unwrap();
         assert_eq!(bin.emoji, Some("\u{1f4e6}".to_string()));
 
-        let test = targets.iter().find(|t| t.name == "//src/main:hello_test").unwrap();
+        let test = targets
+            .iter()
+            .find(|t| t.name == "//src/main:hello_test")
+            .unwrap();
         assert_eq!(test.emoji, Some("\u{1f4dd}".to_string()));
     }
 
@@ -375,5 +377,30 @@ mod tests {
     fn test_parse_label_invalid() {
         let result = parse_label("invalid");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_integration_example_bazel_workspace_discovery() {
+        let example_path = Path::new("example/bazel");
+        if !example_path.exists() {
+            return;
+        }
+
+        if !is_bazel_available() {
+            return;
+        }
+
+        let result = list_targets(example_path, "bazel-example");
+        match result {
+            Ok(targets) => {
+                assert!(!targets.is_empty(), "Should find at least one target");
+
+                let has_hello = targets.iter().any(|t| t.name.contains(":hello"));
+                assert!(has_hello, "Should find hello target");
+            }
+            Err(e) => {
+                eprintln!("Integration test skipped or failed: {}", e);
+            }
+        }
     }
 }

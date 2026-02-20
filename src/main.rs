@@ -418,10 +418,7 @@ async fn run_application(args: Args) -> Result<()> {
                     }
                 }
                 script::ScriptType::Bazel => {
-                    let workspace_dir = path
-                        .parent()
-                        .unwrap_or(&path)
-                        .to_path_buf();
+                    let workspace_dir = path.parent().unwrap_or(&path).to_path_buf();
                     match script::list_bazel_targets(&workspace_dir, &category) {
                         Ok(targets) => {
                             let functions: Vec<script::ScriptFunction> = targets

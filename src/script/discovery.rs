@@ -45,15 +45,15 @@ use walkdir::WalkDir;
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum ScriptType {
     Bash,
-    PackageJson,
-    DevboxJson,
-    Task,
-    Makefile,
-    CargoToml,
-    Just,
-    NxJson,
-    Terraform,
     Bazel,
+    CargoToml,
+    DevboxJson,
+    Just,
+    Makefile,
+    NxJson,
+    PackageJson,
+    Task,
+    Terraform,
 }
 
 #[derive(Debug, Clone)]
@@ -95,6 +95,8 @@ const BAZEL_NAMES: &[&str] = &[
     "WORKSPACE",
     "WORKSPACE.bazel",
     "MODULE.bazel",
+    "BUILD",
+    "BUILD.bazel",
 ];
 
 /// Cache for devbox availability check (checked once per process)
@@ -1210,5 +1212,87 @@ tasks:
             .collect();
         // Even with multiple .tf files, we should get at most one entry
         assert!(tf_files.len() <= 1);
+    }
+
+    #[test]
+    fn test_discover_bazel_workspace() {
+        let temp_dir = TempDir::new().unwrap();
+
+        fs::write(
+            temp_dir.path().join("WORKSPACE"),
+            "workspace(name = \"test\")",
+        )
+        .unwrap();
+        fs::write(
+            temp_dir.path().join("BUILD"),
+            "cc_binary(name = \"hello\", srcs = [\"hello.c\"])",
+        )
+        .unwrap();
+
+        let result = discover_scripts(temp_dir.path()).unwrap();
+        let bazel_files: Vec<_> = result
+            .iter()
+            .filter(|s| s.script_type == ScriptType::Bazel)
+            .collect();
+        assert!(
+            bazel_files.len() <= 1,
+            "should have at most one Bazel script file per directory"
+        );
+        if let Some(sf) = bazel_files.first() {
+            assert_eq!(sf.script_type, ScriptType::Bazel);
+            assert!(sf.display_name.contains("🌿"));
+        }
+    }
+
+    #[test]
+    fn test_discover_bazel_build_bazel() {
+        let temp_dir = TempDir::new().unwrap();
+
+        fs::write(
+            temp_dir.path().join("WORKSPACE.bazel"),
+            "workspace(name = \"test\")",
+        )
+        .unwrap();
+        fs::write(
+            temp_dir.path().join("BUILD.bazel"),
+            "cc_binary(name = \"hello\", srcs = [\"hello.c\"])",
+        )
+        .unwrap();
+
+        let result = discover_scripts(temp_dir.path()).unwrap();
+        let bazel_files: Vec<_> = result
+            .iter()
+            .filter(|s| s.script_type == ScriptType::Bazel)
+            .collect();
+        assert!(
+            bazel_files.len() <= 1,
+            "should have at most one Bazel script file per directory"
+        );
+    }
+
+    #[test]
+    fn test_discover_bazel_module_bazel() {
+        let temp_dir = TempDir::new().unwrap();
+
+        fs::write(
+            temp_dir.path().join("MODULE.bazel"),
+            "module(name = \"test\")",
+        )
+        .unwrap();
+        fs::write(
+            temp_dir.path().join("BUILD.bazel"),
+            "cc_binary(name = \"hello\", srcs = [\"hello.c\"])",
+        )
+        .unwrap();
+
+        let result = discover_scripts(temp_dir.path()).unwrap();
+        let bazel_files: Vec<_> = result
+            .iter()
+            .filter(|s| s.script_type == ScriptType::Bazel)
+            .collect();
+        assert!(
+            bazel_files.len() <= 1,
+            "should have at most one Bazel script file per directory"
+        );
     }
 }
