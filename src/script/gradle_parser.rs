@@ -129,11 +129,7 @@ fn parse_gradle_tasks_output(output: &str, category: &str) -> Result<Vec<GradleT
         }
 
         if line.ends_with(" tasks") && !line.contains('-') {
-            current_group = Some(
-                line.trim_end_matches(" tasks")
-                    .trim()
-                    .to_string(),
-            );
+            current_group = Some(line.trim_end_matches(" tasks").trim().to_string());
             continue;
         }
 
@@ -297,7 +293,10 @@ build - Assembles and tests this project.
         let tasks = parse_gradle_tasks_output(output, "myproject").unwrap();
 
         let assemble = tasks.iter().find(|t| t.name == "assemble").unwrap();
-        assert_eq!(assemble.description, "Assembles the outputs of this project.");
+        assert_eq!(
+            assemble.description,
+            "Assembles the outputs of this project."
+        );
     }
 
     #[test]
@@ -318,7 +317,8 @@ build - Assembles and tests this project.
 
     #[test]
     fn test_parse_gradle_tasks_display_names() {
-        let output = "Build tasks\n-----------\nassemble - Assembles the outputs of this project.\n";
+        let output =
+            "Build tasks\n-----------\nassemble - Assembles the outputs of this project.\n";
         let tasks = parse_gradle_tasks_output(output, "myproject").unwrap();
 
         let task = tasks.iter().find(|t| t.name == "assemble").unwrap();

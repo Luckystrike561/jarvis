@@ -91,16 +91,10 @@ const CARGO_TOML_NAMES: &[&str] = &["Cargo.toml"];
 const NX_JSON_NAMES: &[&str] = &["nx.json"];
 
 /// Gradle build file names to detect
-const GRADLE_BUILD_NAMES: &[&str] = &[
-    "build.gradle",
-    "build.gradle.kts",
-];
+const GRADLE_BUILD_NAMES: &[&str] = &["build.gradle", "build.gradle.kts"];
 
 /// Gradle settings file names to detect
-const GRADLE_SETTINGS_NAMES: &[&str] = &[
-    "settings.gradle",
-    "settings.gradle.kts",
-];
+const GRADLE_SETTINGS_NAMES: &[&str] = &["settings.gradle", "settings.gradle.kts"];
 
 /// Cache for devbox availability check (checked once per process)
 static DEVBOX_AVAILABLE: OnceLock<bool> = OnceLock::new();
