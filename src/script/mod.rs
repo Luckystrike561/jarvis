@@ -17,7 +17,7 @@
 //! | Nx | `nx.json` | [`nx_parser::list_targets`] |
 //! | Terraform / `OpenTofu` | `*.tf` | [`terraform_parser::list_commands`] |
 //! | Gradle | `build.gradle`, `build.gradle.kts` | [`gradle_parser::list_tasks`] |
-//! | Bazel | `WORKSPACE`, `BUILD` | [`bazel_parser::list_targets`] |
+//! | Bazel | `WORKSPACE`, `BUILD`, `MODULE.bazel` | [`bazel_parser::list_targets`] |
 //!
 
 pub mod bazel_parser;

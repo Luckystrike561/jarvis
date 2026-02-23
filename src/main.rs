@@ -441,14 +441,24 @@ async fn run_application(args: Args) -> Result<()> {
                         let functions: Vec<script::ScriptFunction> = targets
                             .into_iter()
                             .filter(|t| !t.ignored)
-                            .map(|t| script::ScriptFunction {
-                                name: t.label,
-                                display_name: t.display_name,
-                                category: t.category,
-                                description: t.description,
-                                emoji: t.emoji,
-                                ignored: t.ignored,
-                                script_type: script::ScriptType::Bazel,
+                            .map(|t| {
+                                let prefixed_name = match t.target_type {
+                                    script::bazel_parser::BazelTargetType::Binary => {
+                                        format!("run:{}", t.label)
+                                    }
+                                    script::bazel_parser::BazelTargetType::Test => {
+                                        format!("test:{}", t.label)
+                                    }
+                                };
+                                script::ScriptFunction {
+                                    name: prefixed_name,
+                                    display_name: t.display_name,
+                                    category: t.category,
+                                    description: t.description,
+                                    emoji: t.emoji,
+                                    ignored: t.ignored,
+                                    script_type: script::ScriptType::Bazel,
+                                }
                             })
                             .collect();
                         ParseResult::Functions(functions)
