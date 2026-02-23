@@ -161,3 +161,8 @@ result
 
 # Nx cache
 .nx/
+
+# Bazel build artifacts
+/bazel-*
+*.bazelrc.local
+*.bzlmod.lock
