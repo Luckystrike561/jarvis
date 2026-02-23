@@ -185,14 +185,16 @@ pub fn list_tasks(project_dir: &Path, category: &str) -> Result<Vec<GradleTask>>
         .args(["tasks", "--all", "-q"])
         .current_dir(project_dir)
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .output()
         .with_context(|| format!("Failed to run {} tasks", gradle_cmd))?;
 
     if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
         anyhow::bail!(
-            "gradle tasks failed with exit code: {:?}",
-            output.status.code()
+            "gradle tasks failed with exit code: {:?}\nStderr: {}",
+            output.status.code(),
+            stderr
         );
     }
 
