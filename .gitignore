@@ -163,6 +163,7 @@ result
 .nx/
 
 # Bazel build artifacts
-/bazel-*
+bazel-*
 *.bazelrc.local
 *.bzlmod.lock
+MODULE.bazel.lock

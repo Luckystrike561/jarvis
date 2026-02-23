@@ -11,6 +11,7 @@
 //! - **Makefiles** (`Makefile`, etc.) - Targets defined in GNU Make format
 //! - **Justfiles** (`justfile`, etc.) - Recipes defined in just format
 //! - **Terraform / `OpenTofu`** (`*.tf`) — Terraform infrastructure-as-code commands
+//! - **Bazel** (`WORKSPACE`, `BUILD`, `MODULE.bazel`) — Bazel build targets
 //!
 //! ## Discovery Locations
 //!
@@ -128,6 +129,7 @@ fn is_devbox_available() -> bool {
 /// discovery needs the results, they're already cached in the `OnceLock` statics.
 pub fn prewarm_tool_checks() {
     std::thread::spawn(is_devbox_available);
+    std::thread::spawn(crate::script::bazel_parser::is_bazel_available);
     std::thread::spawn(crate::script::task_parser::is_task_available);
     std::thread::spawn(crate::script::makefile_parser::is_make_available);
     std::thread::spawn(crate::script::just_parser::is_just_available);
@@ -252,6 +254,7 @@ pub fn discover_single_file(file_path: &Path) -> Result<ScriptFile> {
 
     let category = name.clone();
     let display_name = match script_type {
+        ScriptType::Bazel => format!("🌿 {}", format_display_name(&name)),
         ScriptType::Task => format!("📋 {}", format_display_name(&name)),
         ScriptType::Makefile => format!("🔨 {}", format_display_name(&name)),
         ScriptType::Just => format!("⚡ {}", format_display_name(&name)),
@@ -342,10 +345,20 @@ fn determine_script_type(filename: &str, file_path: &Path) -> Result<ScriptType>
         if !crate::script::gradle_parser::is_gradle_available() {
             anyhow::bail!(
                 "Gradle build file found but neither Gradle wrapper (gradlew) nor system Gradle is available. \
-                Please install Gradle or add a Gradle wrapper to use this file."
+                 Please install Gradle or add a Gradle wrapper to use this file."
             );
         }
         return Ok(ScriptType::Gradle);
+    }
+
+    if BAZEL_NAMES.contains(&filename) {
+        if !crate::script::bazel_parser::is_bazel_available() {
+            anyhow::bail!(
+                "Bazel workspace file found but neither 'bazel' nor 'bazelisk' is installed or in PATH. \
+                 Please install Bazel or Bazelisk to use this file."
+            );
+        }
+        return Ok(ScriptType::Bazel);
     }
 
     // Check file extension for .sh files
@@ -367,7 +380,9 @@ fn determine_script_type(filename: &str, file_path: &Path) -> Result<ScriptType>
     // Unsupported file type
     anyhow::bail!(
         "Unsupported file type: '{}'. \
-        Supported types: .sh (bash), .tf (terraform), package.json (npm), devbox.json (devbox), Taskfile.yml (task), Makefile (make), justfile (just), Cargo.toml (cargo), nx.json (nx)",
+        Supported types: .sh (bash), .tf (terraform), package.json (npm), devbox.json (devbox), \
+        Taskfile.yml (task), Makefile (make), justfile (just), Cargo.toml (cargo), nx.json (nx), \
+        WORKSPACE/BUILD (bazel)",
         filename
     );
 }
@@ -1246,6 +1261,33 @@ tasks:
             .collect();
         // Even with multiple .tf files, we should get at most one entry
         assert!(tf_files.len() <= 1);
+    }
+
+    #[test]
+    fn test_discover_bazel_single_entry_per_dir() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create multiple bazel files in the same directory
+        fs::write(temp_dir.path().join("WORKSPACE"), "").unwrap();
+        fs::write(temp_dir.path().join("BUILD"), "").unwrap();
+        fs::write(temp_dir.path().join("MODULE.bazel"), "").unwrap();
+
+        let result = discover_scripts(temp_dir.path()).unwrap();
+        // If bazel binary is installed we get 1 ScriptFile with Bazel type, else 0
+        let bazel_files: Vec<_> = result
+            .iter()
+            .filter(|s| s.script_type == ScriptType::Bazel)
+            .collect();
+        assert!(
+            bazel_files.len() <= 1,
+            "should have at most one Bazel script file per directory"
+        );
+        if let Some(sf) = bazel_files.first() {
+            assert_eq!(sf.script_type, ScriptType::Bazel);
+            assert!(sf.display_name.contains("🌿"));
+            // Path should be the directory, not a specific bazel file
+            assert!(sf.path.is_dir());
+        }
     }
 
     #[test]
