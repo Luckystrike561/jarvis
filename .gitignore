@@ -162,6 +162,15 @@ result
 # Nx cache
 .nx/
 
+# Gradle build artifacts
+.gradle/
+build/
+!build.gradle
+!build.gradle.kts
+!settings.gradle
+!settings.gradle.kts
+gradle-app.setting
+
 # Bazel build artifacts
 bazel-*
 *.bazelrc.local
