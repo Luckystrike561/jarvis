@@ -76,7 +76,7 @@ jarvis -p ~/projects           # Short form
 **Commits:** Use Conventional Commits format: `feat:`, `fix:`, `docs:`, `refactor:`, `perf:`, `test:`. Examples: `feat: add fuzzy search`, `fix: handle multi-line arrays`.
 
 ## Key Patterns
-- Script discovery: Jarvis scans current directory (`./`) and optional subdirectories (`./script/`, `./scripts/`, `./jarvis/`) for `.sh` files, `package.json`, `devbox.json`, `Taskfile.yml`, and `Makefile`, auto-detects all bash functions, npm scripts, devbox scripts, task targets, and make targets. For this repo, use `jarvis -p example` to test.
+- Script discovery: Jarvis scans current directory (`./`) and optional subdirectories (`./script/`, `./scripts/`, `./jarvis/`) for `.sh` files, `package.json`, `devbox.json`, `Taskfile.yml`, `Makefile`, `justfile`, `Cargo.toml`, `nx.json`, `*.tf`, `build.gradle`/`build.gradle.kts`, and `WORKSPACE`/`BUILD`/`MODULE.bazel`, auto-detects all bash functions, npm scripts, devbox scripts, task targets, make targets, just recipes, cargo commands, nx targets, terraform/opentofu commands, gradle tasks, and bazel targets. For this repo, use `jarvis -p example` to test.
 - Function naming: `my_function` becomes "My Function" in the UI
 - Execution: always use `.stdin(Stdio::inherit()).stdout(Stdio::inherit()).stderr(Stdio::inherit())` 
 - TUI states: `MainMenu` → `CategoryView` → execute → return

@@ -179,10 +179,16 @@ pub fn discover_scripts_shallow(scripts_dir: &Path) -> Result<Vec<ScriptFile>> {
 ///
 /// This function determines the script type from the file extension/name:
 /// - `.sh` files → Bash
+/// - `.tf` files → Terraform
 /// - `package.json` → `PackageJson`
 /// - `devbox.json` → `DevboxJson`
 /// - `Taskfile.yml` (and variants) → Task
 /// - `Makefile` (and variants) → Makefile
+/// - `justfile` (and variants) → Just
+/// - `Cargo.toml` → `CargoToml`
+/// - `nx.json` → `NxJson`
+/// - `build.gradle` / `build.gradle.kts` → Gradle
+/// - `WORKSPACE` / `BUILD` / `MODULE.bazel` → Bazel
 ///
 /// # Arguments
 ///
@@ -382,7 +388,7 @@ fn determine_script_type(filename: &str, file_path: &Path) -> Result<ScriptType>
         "Unsupported file type: '{}'. \
         Supported types: .sh (bash), .tf (terraform), package.json (npm), devbox.json (devbox), \
         Taskfile.yml (task), Makefile (make), justfile (just), Cargo.toml (cargo), nx.json (nx), \
-        WORKSPACE/BUILD (bazel)",
+        build.gradle (gradle), WORKSPACE/BUILD (bazel)",
         filename
     );
 }

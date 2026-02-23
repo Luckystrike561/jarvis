@@ -20,10 +20,10 @@ A beautiful TUI for managing and executing scripts with zero configuration.
 
 ## Features
 
-- **Zero Configuration** - Auto-discovers bash functions, npm scripts, devbox scripts, Taskfile tasks, Makefile targets, Justfile recipes, Cargo commands, Nx targets, and Terraform/OpenTofu commands
+- **Zero Configuration** - Auto-discovers bash functions, npm scripts, devbox scripts, Taskfile tasks, Makefile targets, Justfile recipes, Cargo commands, Nx targets, Terraform/OpenTofu commands, Gradle tasks, and Bazel targets
 - **Beautiful TUI** - Modern terminal interface built with Ratatui
 - **11 Built-in Themes** - Catppuccin Mocha/Macchiato/Frappe, Dracula, Nord, Tokyo Night, Solarized Dark, Gruvbox Dark, One Dark, Monokai, and Rose Pine with live preview picker
-- **Multi-Language Support** - Works with `.sh` files, `package.json`, `devbox.json`, `Taskfile.yml`, `Makefile`, `justfile`, `Cargo.toml`, Nx workspaces (`nx.json`/`project.json`), and Terraform/OpenTofu (`.tf` files)
+- **Multi-Language Support** - Works with `.sh` files, `package.json`, `devbox.json`, `Taskfile.yml`, `Makefile`, `justfile`, `Cargo.toml`, Nx workspaces (`nx.json`/`project.json`), Terraform/OpenTofu (`.tf` files), Gradle (`build.gradle`/`build.gradle.kts`), and Bazel (`WORKSPACE`/`BUILD`/`MODULE.bazel`)
 - **Single Binary** - Compile once, run anywhere
 
 ## Installation
@@ -185,6 +185,14 @@ Jarvis discovers Nx project targets in monorepo workspaces. Projects are grouped
 
 Jarvis discovers Terraform or OpenTofu projects and provides common commands (init, plan, apply, destroy, validate, fmt). Workspaces are listed when more than one exists. Supports both `terraform` and `tofu` binaries with automatic detection.
 
+**Gradle** - From `build.gradle` / `build.gradle.kts`:
+
+Jarvis discovers Gradle projects and lists available tasks. Supports both the Gradle wrapper (`gradlew`) and system Gradle with automatic detection.
+
+**Bazel** - From `WORKSPACE`, `BUILD`, `MODULE.bazel`:
+
+Jarvis discovers Bazel workspaces and lists binary and test targets using `bazel query`. Binary targets are run with `bazel run` and test targets with `bazel test`. Supports both `bazelisk` and `bazel` with automatic detection.
+
 > **Note:** Task support requires the `task` binary to be installed. See [taskfile.dev](https://taskfile.dev) for installation instructions.
 
 > **Note:** Make support requires the `make` binary to be installed. It is pre-installed on most Unix systems.
@@ -196,6 +204,10 @@ Jarvis discovers Terraform or OpenTofu projects and provides common commands (in
 > **Note:** Nx support requires the `npx` binary (part of Node.js/npm). See [nodejs.org](https://nodejs.org) for installation instructions.
 
 > **Note:** Terraform/OpenTofu support requires the `terraform` or `tofu` binary. Jarvis checks for `terraform` first and falls back to `tofu`. See [terraform.io](https://www.terraform.io) or [opentofu.org](https://opentofu.org) for installation instructions.
+
+> **Note:** Gradle support requires the Gradle wrapper (`gradlew`) or the `gradle` binary. See [gradle.org](https://gradle.org) for installation instructions.
+
+> **Note:** Bazel support requires the `bazelisk` or `bazel` binary. Jarvis checks for `bazelisk` first and falls back to `bazel`. See [bazel.build](https://bazel.build) for installation instructions.
 
 ### Function Annotations
 

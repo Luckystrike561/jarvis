@@ -7,7 +7,7 @@ This guide covers both manual TUI testing and automated unit/integration tests.
 ### Running Tests
 
 ```bash
-# Run all 306 tests
+# Run all tests
 cargo test
 
 # Run specific test
@@ -24,7 +24,7 @@ devbox run test
 
 Jarvis has comprehensive test coverage across all modules:
 
-- **306 total tests** covering ~90% of testable code
+- **350+ total tests** covering ~90% of testable code
 - **Unit tests** for script discovery, parsing, npm parsing, PTY execution, and terminal widget
 - **Integration tests** for application logic and edge cases
 - **Mock-based tests** for TUI event handling and key input processing
@@ -40,6 +40,8 @@ Jarvis has comprehensive test coverage across all modules:
 - `src/script/task_parser.rs` - ~90% (Taskfile.yml parsing)
 - `src/script/nx_parser.rs` - ~90% (Nx workspace parsing)
 - `src/script/terraform_parser.rs` - ~90% (Terraform/OpenTofu command discovery)
+- `src/script/gradle_parser.rs` - ~90% (Gradle task discovery)
+- `src/script/bazel_parser.rs` - ~90% (Bazel target discovery)
 - `src/ui/app.rs` - ~90% (application state and navigation)
 - `src/ui/pty_runner.rs` - ~85% (PTY execution, shell escaping, command building)
 - `src/ui/terminal_widget.rs` - ~80% (selection, scrollback, color conversion)
@@ -74,6 +76,8 @@ When you start Jarvis with `jarvis -p example`, you should see:
 - **Cargo.toml** - Cargo commands (from example/cargo-demo/)
 - **nx.json** - Nx project targets (from example/nx/)
 - **terraform/** - Terraform/OpenTofu commands (from example/terraform/)
+- **gradle/** - Gradle tasks (from example/gradle/, if Gradle is installed)
+- **bazel/** - Bazel targets (from example/bazel/, if Bazel is installed)
 
 ### 3. Non-Interactive Execution ✅
 Select a simple echo function from any discovered script.
@@ -111,6 +115,8 @@ Select an interactive function (e.g., one that uses `gum` or `read`).
 ✅ Interactive execution (PTY): PASS/FAIL
 ✅ npm scripts (if available): PASS/FAIL
 ✅ Terraform/OpenTofu commands (if binary available): PASS/FAIL
+✅ Gradle tasks (if binary available): PASS/FAIL
+✅ Bazel targets (if binary available): PASS/FAIL
 ```
 
 ## Troubleshooting
@@ -134,6 +140,6 @@ go install github.com/charmbracelet/gum@latest
 
 **All manual TUI tests pass** = Interactive input support is working correctly! 🎉
 
-**All 306 automated tests pass** = Code quality and functionality are maintained! 🎉
+**All 350+ automated tests pass** = Code quality and functionality are maintained! 🎉
 
 The key indicator for manual testing is: **You can type into gum prompts and see your input.**

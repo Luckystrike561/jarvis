@@ -201,7 +201,7 @@ async fn run_application(args: Args) -> Result<()> {
         }
 
         if script_files.is_empty() {
-            anyhow::bail!("No scripts found in {} (also checked: ./script/, ./scripts/, ./jarvis/). Add bash scripts (.sh), package.json, devbox.json, Taskfile.yml, Makefile, justfile, Cargo.toml, nx.json, or *.tf files to get started.", current_dir.display());
+            anyhow::bail!("No scripts found in {} (also checked: ./script/, ./scripts/, ./jarvis/). Add bash scripts (.sh), package.json, devbox.json, Taskfile.yml, Makefile, justfile, Cargo.toml, nx.json, *.tf, build.gradle, or WORKSPACE/BUILD (Bazel) files to get started.", current_dir.display());
         }
 
         (script_files, current_dir)
