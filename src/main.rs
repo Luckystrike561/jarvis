@@ -201,7 +201,7 @@ async fn run_application(args: Args) -> Result<()> {
         }
 
         if script_files.is_empty() {
-            anyhow::bail!("No scripts found in {} (also checked: ./script/, ./scripts/, ./jarvis/). Add bash scripts (.sh), package.json, devbox.json, Taskfile.yml, Makefile, justfile, Cargo.toml, nx.json, or *.tf files to get started.", current_dir.display());
+            anyhow::bail!("No scripts found in {} (also checked: ./script/, ./scripts/, ./jarvis/). Add bash scripts (.sh), package.json, devbox.json, Taskfile.yml, Makefile, justfile, Cargo.toml, nx.json, *.tf, build.gradle, or WORKSPACE/BUILD (Bazel) files to get started.", current_dir.display());
         }
 
         (script_files, current_dir)
@@ -430,6 +430,35 @@ async fn run_application(args: Args) -> Result<()> {
                                 emoji: t.emoji,
                                 ignored: t.ignored,
                                 script_type: script::ScriptType::Gradle,
+                            })
+                            .collect();
+                        ParseResult::Functions(functions)
+                    }
+                    Err(e) => ParseResult::Error(path.display().to_string(), e),
+                },
+                script::ScriptType::Bazel => match script::list_bazel_targets(&path, &category) {
+                    Ok(targets) => {
+                        let functions: Vec<script::ScriptFunction> = targets
+                            .into_iter()
+                            .filter(|t| !t.ignored)
+                            .map(|t| {
+                                let prefixed_name = match t.target_type {
+                                    script::bazel_parser::BazelTargetType::Binary => {
+                                        format!("run:{}", t.label)
+                                    }
+                                    script::bazel_parser::BazelTargetType::Test => {
+                                        format!("test:{}", t.label)
+                                    }
+                                };
+                                script::ScriptFunction {
+                                    name: prefixed_name,
+                                    display_name: t.display_name,
+                                    category: t.category,
+                                    description: t.description,
+                                    emoji: t.emoji,
+                                    ignored: t.ignored,
+                                    script_type: script::ScriptType::Bazel,
+                                }
                             })
                             .collect();
                         ParseResult::Functions(functions)

@@ -246,6 +246,23 @@ fn build_command(
                 .unwrap_or_else(|| "gradle".to_string());
             Ok((gradle_cmd, vec![func.name.clone()], dir))
         }
+        ScriptType::Bazel => {
+            let bazel_cmd = script::bazel_parser::get_bazel_command()
+                .unwrap_or("bazel")
+                .to_string();
+            let (action, label) = if let Some(stripped) = func.name.strip_prefix("test:") {
+                ("test", stripped)
+            } else if let Some(stripped) = func.name.strip_prefix("run:") {
+                ("run", stripped)
+            } else {
+                ("run", func.name.as_str())
+            };
+            Ok((
+                bazel_cmd,
+                vec![action.to_string(), label.to_string()],
+                path.clone(),
+            ))
+        }
     }
 }
 
@@ -672,6 +689,31 @@ mod tests {
             ]
         );
         assert_eq!(cwd, PathBuf::from("/app"));
+    }
+
+    #[test]
+    fn test_build_command_bazel_run() {
+        let func = make_func("run://:hello", ScriptType::Bazel);
+        let sf = make_script_file("/workspace", ScriptType::Bazel);
+
+        let (program, args, cwd) = build_command(&func, &sf).unwrap();
+
+        // Should use bazel/bazelisk binary (we test the args and cwd, not the exact binary name)
+        assert!(program == "bazel" || program == "bazelisk");
+        assert_eq!(args, vec!["run", "//:hello"]);
+        assert_eq!(cwd, PathBuf::from("/workspace"));
+    }
+
+    #[test]
+    fn test_build_command_bazel_test() {
+        let func = make_func("test://:hello_test", ScriptType::Bazel);
+        let sf = make_script_file("/workspace", ScriptType::Bazel);
+
+        let (program, args, cwd) = build_command(&func, &sf).unwrap();
+
+        assert!(program == "bazel" || program == "bazelisk");
+        assert_eq!(args, vec!["test", "//:hello_test"]);
+        assert_eq!(cwd, PathBuf::from("/workspace"));
     }
 
     // --- CommandHistory tests ---

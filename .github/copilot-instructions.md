@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Jarvis is a **universal TUI (Terminal User Interface) for managing and executing bash scripts**. It's built with Rust and Ratatui, providing zero-configuration script discovery and execution.
+Jarvis is a **universal TUI (Terminal User Interface) for managing and executing scripts**. It's built with Rust and Ratatui, providing zero-configuration script discovery and execution for bash scripts, npm scripts, Taskfile tasks, Makefile targets, Justfile recipes, Cargo commands, Nx targets, Terraform/OpenTofu commands, Gradle tasks, and Bazel targets.
 
 ## Development Environment
 
@@ -142,10 +142,18 @@ jarvis/
 ├── src/
 │   ├── main.rs           # Application entry, terminal setup, event loop
 │   ├── script/
-│   │   ├── discovery.rs  # Find .sh files and package.json, map to categories
+│   │   ├── discovery.rs  # Find .sh files, package.json, Cargo.toml, etc. and map to categories
 │   │   ├── parser.rs     # Parse bash functions with regex
 │   │   ├── npm_parser.rs # Parse package.json scripts
-│   │   ├── executor.rs   # Execute with full terminal access
+│   │   ├── cargo_parser.rs # Parse Cargo.toml targets
+│   │   ├── devbox_parser.rs # Parse devbox.json scripts
+│   │   ├── just_parser.rs # Parse justfile recipes
+│   │   ├── makefile_parser.rs # Parse Makefile targets
+│   │   ├── task_parser.rs # Parse Taskfile.yml tasks
+│   │   ├── nx_parser.rs  # Parse Nx workspace targets
+│   │   ├── terraform_parser.rs # Parse Terraform/OpenTofu commands
+│   │   ├── gradle_parser.rs # Parse Gradle tasks
+│   │   ├── bazel_parser.rs # Parse Bazel targets
 │   │   └── mod.rs        # Module exports
 │   └── ui/
 │       ├── app.rs        # App state, navigation logic
@@ -163,8 +171,17 @@ jarvis/
 ### Script Discovery
 
 Jarvis automatically discovers:
-1. **Bash scripts** in `.sh` files (current directory + optional subdirectories)
-2. **npm scripts** in `package.json` files
+1. **Bash scripts** - Functions in `.sh` files
+2. **npm scripts** - From `package.json` files
+3. **Devbox scripts** - From `devbox.json` files
+4. **Taskfile tasks** - From `Taskfile.yml` files
+5. **Makefile targets** - From `Makefile` files
+6. **Justfile recipes** - From `justfile` files
+7. **Cargo commands** - From `Cargo.toml` files (binaries and examples)
+8. **Nx targets** - From `nx.json` / `project.json` files
+9. **Terraform/OpenTofu commands** - From `.tf` files
+10. **Gradle tasks** - From `build.gradle` / `build.gradle.kts` files
+11. **Bazel targets** - From `WORKSPACE` / `BUILD` / `MODULE.bazel` files
 
 ```rust
 // Scan current directory and optional subdirectories
@@ -179,8 +196,13 @@ let search_paths = vec![
 // Root directory: depth 1 (immediate files only)
 // Subdirectories: depth 2 (recursive search)
 
-// Filter for .sh files and package.json
-if extension == "sh" || file_name == "package.json" { }
+// Filter for supported file types
+if extension == "sh" || extension == "tf" || 
+   file_name == "package.json" || file_name == "devbox.json" ||
+   file_name == "Taskfile.yml" || file_name == "Makefile" ||
+   file_name == "justfile" || file_name == "Cargo.toml" ||
+   file_name == "nx.json" || file_name == "build.gradle" ||
+   file_name == "WORKSPACE" || file_name == "BUILD" { }
 
 // Map to categories
 let category = match name.as_str() {
