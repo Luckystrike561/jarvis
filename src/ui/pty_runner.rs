@@ -257,7 +257,7 @@ fn build_command(
             Ok((
                 bazel_cmd,
                 vec![action.to_string(), target.to_string()],
-                path.to_path_buf(),
+                path.clone(),
             ))
         }
     }
