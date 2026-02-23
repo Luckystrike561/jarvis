@@ -59,13 +59,16 @@ pub struct GradleTask {
 }
 
 fn get_gradle_wrapper(project_dir: &Path) -> Option<std::path::PathBuf> {
-    let wrapper = project_dir.join("gradlew");
-    if wrapper.exists() {
-        return Some(wrapper);
-    }
-    let wrapper_bat = project_dir.join("gradlew.bat");
-    if wrapper_bat.exists() {
-        return Some(wrapper_bat);
+    if cfg!(target_os = "windows") {
+        let wrapper_bat = project_dir.join("gradlew.bat");
+        if wrapper_bat.exists() {
+            return Some(wrapper_bat);
+        }
+    } else {
+        let wrapper = project_dir.join("gradlew");
+        if wrapper.exists() {
+            return Some(wrapper);
+        }
     }
     None
 }
@@ -91,14 +94,7 @@ pub fn get_gradle_command(project_dir: &Path) -> Option<String> {
         return Some(wrapper.to_string_lossy().to_string());
     }
 
-    if Command::new("gradle")
-        .arg("--version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-    {
+    if is_gradle_available() {
         return Some("gradle".to_string());
     }
 
@@ -106,7 +102,7 @@ pub fn get_gradle_command(project_dir: &Path) -> Option<String> {
 }
 
 fn parse_gradle_tasks_output(output: &str, category: &str) -> Result<Vec<GradleTask>> {
-    let mut tasks = Vec::new();
+    let mut tasks = Vec::with_capacity(20);
     let mut current_group: Option<String> = None;
 
     for line in output.lines() {
@@ -152,15 +148,13 @@ fn parse_gradle_tasks_output(output: &str, category: &str) -> Result<Vec<GradleT
 
             let display_name = format_display_name(&name);
 
-            let emoji = Some("\u{1F4E6}".to_string());
-
             tasks.push(GradleTask {
                 name,
                 display_name,
                 category: category.to_string(),
                 group: current_group.clone(),
                 description,
-                emoji,
+                emoji: None,
                 ignored: false,
             });
         }
@@ -184,25 +178,13 @@ pub fn list_tasks(project_dir: &Path, category: &str) -> Result<Vec<GradleTask>>
          Please ensure Gradle is installed or a Gradle wrapper is present in the project.",
     )?;
 
-    let output = if cfg!(target_os = "windows") {
-        Command::new(&gradle_cmd)
-            .args(["tasks", "--all", "-q"])
-            .current_dir(project_dir)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .output()
-            .with_context(|| format!("Failed to run {} tasks", gradle_cmd))?
-    } else {
-        Command::new(&gradle_cmd)
-            .arg("tasks")
-            .arg("--all")
-            .arg("-q")
-            .current_dir(project_dir)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .output()
-            .with_context(|| format!("Failed to run {} tasks", gradle_cmd))?
-    };
+    let output = Command::new(&gradle_cmd)
+        .args(["tasks", "--all", "-q"])
+        .current_dir(project_dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .with_context(|| format!("Failed to run {} tasks", gradle_cmd))?;
 
     if !output.status.success() {
         anyhow::bail!(
@@ -211,8 +193,7 @@ pub fn list_tasks(project_dir: &Path, category: &str) -> Result<Vec<GradleTask>>
         );
     }
 
-    let output_str = String::from_utf8_lossy(&output.stdout).to_string();
-
+    let output_str = String::from_utf8_lossy(&output.stdout);
     parse_gradle_tasks_output(&output_str, category)
 }
 
@@ -330,5 +311,21 @@ build - Assembles and tests this project.
         let temp_dir = std::env::temp_dir();
         let result = get_gradle_wrapper(&temp_dir);
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_gradle_tasks_stops_at_other_tasks() {
+        let output = r#"
+Build tasks
+-----------
+build - Assembles and tests this project.
+
+Other tasks
+-----------
+wrapper - Generates Gradle wrapper files.
+"#;
+        let tasks = parse_gradle_tasks_output(output, "myproject").unwrap();
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].name, "build");
     }
 }
