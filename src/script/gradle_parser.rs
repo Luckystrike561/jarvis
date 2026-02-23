@@ -75,6 +75,7 @@ fn get_gradle_wrapper(project_dir: &Path) -> Option<std::path::PathBuf> {
 
 pub fn is_gradle_available() -> bool {
     *GRADLE_AVAILABLE.get_or_init(|| {
+        // Check if system gradle is installed
         if Command::new("gradle")
             .arg("--version")
             .stdout(Stdio::null())
@@ -85,7 +86,9 @@ pub fn is_gradle_available() -> bool {
         {
             return true;
         }
-        false
+        // Even if system gradle isn't installed, gradle projects can use gradlew wrapper
+        // Return true to allow discovery of gradle projects - execution will fail later if wrapper doesn't exist
+        true
     })
 }
 

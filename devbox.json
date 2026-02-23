@@ -8,7 +8,8 @@
     "rustup@1.28.2",
     "go-task@3.45.5",
     "just@latest",
-    "opentofu@latest"
+    "opentofu@latest",
+    "gradle@latest"
   ],
   "shell": {
     "init_hook": [
