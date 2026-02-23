@@ -17,8 +17,10 @@
 //! | Nx | `nx.json` | [`nx_parser::list_targets`] |
 //! | Terraform / `OpenTofu` | `*.tf` | [`terraform_parser::list_commands`] |
 //! | Gradle | `build.gradle`, `build.gradle.kts` | [`gradle_parser::list_tasks`] |
+//! | Bazel | `WORKSPACE`, `BUILD` | [`bazel_parser::list_targets`] |
 //!
 
+pub mod bazel_parser;
 pub mod cargo_parser;
 pub mod devbox_parser;
 pub mod discovery;
@@ -32,6 +34,7 @@ pub mod task_parser;
 pub mod terraform_parser;
 pub mod utils;
 
+pub use bazel_parser::list_targets as list_bazel_targets;
 pub use cargo_parser::list_targets as list_cargo_targets;
 pub use devbox_parser::parse_devbox_json;
 pub use discovery::{

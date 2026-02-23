@@ -246,6 +246,20 @@ fn build_command(
                 .unwrap_or_else(|| "gradle".to_string());
             Ok((gradle_cmd, vec![func.name.clone()], dir))
         }
+        ScriptType::Bazel => {
+            let bazel_cmd =
+                script::bazel_parser::get_bazel_command().unwrap_or_else(|| "bazel".to_string());
+            let (action, target) = if func.name.contains("_test") || func.name.ends_with("_test") {
+                ("test", func.name.as_str())
+            } else {
+                ("run", func.name.as_str())
+            };
+            Ok((
+                bazel_cmd,
+                vec![action.to_string(), target.to_string()],
+                path.to_path_buf(),
+            ))
+        }
     }
 }
 

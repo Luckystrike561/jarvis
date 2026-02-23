@@ -44,16 +44,17 @@ use walkdir::WalkDir;
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum ScriptType {
+    Bazel,
     Bash,
-    PackageJson,
-    DevboxJson,
-    Task,
-    Makefile,
-    Just,
     CargoToml,
-    NxJson,
-    Terraform,
+    DevboxJson,
     Gradle,
+    Just,
+    Makefile,
+    NxJson,
+    PackageJson,
+    Task,
+    Terraform,
 }
 
 #[derive(Debug, Clone)]
@@ -95,6 +96,15 @@ const GRADLE_BUILD_NAMES: &[&str] = &["build.gradle", "build.gradle.kts"];
 
 /// Gradle settings file names to detect
 const GRADLE_SETTINGS_NAMES: &[&str] = &["settings.gradle", "settings.gradle.kts"];
+
+/// Bazel workspace config names to detect
+const BAZEL_NAMES: &[&str] = &[
+    "BUILD",
+    "BUILD.bazel",
+    "MODULE.bazel",
+    "WORKSPACE",
+    "WORKSPACE.bazel",
+];
 
 /// Cache for devbox availability check (checked once per process)
 static DEVBOX_AVAILABLE: OnceLock<bool> = OnceLock::new();
@@ -209,7 +219,8 @@ pub fn discover_single_file(file_path: &Path) -> Result<ScriptFile> {
 
     // Get the file stem (name without extension) for category/display name
     let name = match script_type {
-        ScriptType::PackageJson
+        ScriptType::Bazel
+        | ScriptType::PackageJson
         | ScriptType::DevboxJson
         | ScriptType::Task
         | ScriptType::Makefile
@@ -371,6 +382,10 @@ fn discover_scripts_with_depth(scripts_dir: &Path, max_depth: usize) -> Result<V
     // Track directories that already have a Gradle ScriptFile registered.
     // Multiple gradle files (build.gradle, settings.gradle, etc.) in the same directory should produce only one entry.
     let mut gradle_dirs: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+
+    // Track directories that already have a Bazel ScriptFile registered.
+    // Multiple bazel files (WORKSPACE, BUILD, MODULE.bazel, etc.) in the same directory should produce only one entry.
+    let mut bazel_dirs: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
 
     // Verify the directory exists and is readable
     if !scripts_dir.exists() {
@@ -632,6 +647,42 @@ fn discover_scripts_with_depth(scripts_dir: &Path, max_depth: usize) -> Result<V
                     category,
                     display_name,
                     script_type: ScriptType::Gradle,
+                });
+                continue;
+            }
+
+            if BAZEL_NAMES.contains(&filename) {
+                if !crate::script::bazel_parser::is_bazel_available() {
+                    continue;
+                }
+
+                // Only register one ScriptFile per bazel directory
+                let bazel_dir = path.parent().unwrap_or(scripts_dir).to_path_buf();
+
+                if bazel_dirs.contains(&bazel_dir) {
+                    continue;
+                }
+                bazel_dirs.insert(bazel_dir.clone());
+
+                let name = if let Some(parent) = path.parent() {
+                    parent
+                        .file_name()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("bazel")
+                        .to_string()
+                } else {
+                    "bazel".to_string()
+                };
+
+                let category = name.clone();
+                let display_name = format!("🌿 {}", format_display_name(&name));
+
+                scripts.push(ScriptFile {
+                    path: bazel_dir,
+                    name,
+                    category,
+                    display_name,
+                    script_type: ScriptType::Bazel,
                 });
                 continue;
             }

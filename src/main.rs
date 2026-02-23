@@ -436,6 +436,25 @@ async fn run_application(args: Args) -> Result<()> {
                     }
                     Err(e) => ParseResult::Error(path.display().to_string(), e),
                 },
+                script::ScriptType::Bazel => match script::list_bazel_targets(&path, &category) {
+                    Ok(targets) => {
+                        let functions: Vec<script::ScriptFunction> = targets
+                            .into_iter()
+                            .filter(|t| !t.ignored)
+                            .map(|t| script::ScriptFunction {
+                                name: t.label,
+                                display_name: t.display_name,
+                                category: t.category,
+                                description: t.description,
+                                emoji: t.emoji,
+                                ignored: t.ignored,
+                                script_type: script::ScriptType::Bazel,
+                            })
+                            .collect();
+                        ParseResult::Functions(functions)
+                    }
+                    Err(e) => ParseResult::Error(path.display().to_string(), e),
+                },
             })
         })
         .collect();
