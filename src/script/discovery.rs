@@ -368,6 +368,10 @@ fn discover_scripts_with_depth(scripts_dir: &Path, max_depth: usize) -> Result<V
     // Multiple .tf files in the same directory should produce only one entry.
     let mut terraform_dirs: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
 
+    // Track directories that already have a Gradle ScriptFile registered.
+    // Multiple gradle files (build.gradle, settings.gradle, etc.) in the same directory should produce only one entry.
+    let mut gradle_dirs: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+
     // Verify the directory exists and is readable
     if !scripts_dir.exists() {
         return Ok(scripts); // Return empty vec if directory doesn't exist
@@ -601,6 +605,14 @@ fn discover_scripts_with_depth(scripts_dir: &Path, max_depth: usize) -> Result<V
                     continue;
                 }
 
+                // Only register one ScriptFile per gradle directory
+                let gradle_dir = path.parent().unwrap_or(scripts_dir).to_path_buf();
+
+                if gradle_dirs.contains(&gradle_dir) {
+                    continue;
+                }
+                gradle_dirs.insert(gradle_dir.clone());
+
                 let name = if let Some(parent) = path.parent() {
                     parent
                         .file_name()
@@ -615,7 +627,7 @@ fn discover_scripts_with_depth(scripts_dir: &Path, max_depth: usize) -> Result<V
                 let display_name = format!("🐘 {}", format_display_name(&name));
 
                 scripts.push(ScriptFile {
-                    path: path.to_path_buf(),
+                    path: gradle_dir,
                     name,
                     category,
                     display_name,
@@ -1183,5 +1195,33 @@ tasks:
             .collect();
         // Even with multiple .tf files, we should get at most one entry
         assert!(tf_files.len() <= 1);
+    }
+
+    #[test]
+    fn test_discover_gradle_single_entry_per_dir() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create multiple gradle files in the same directory
+        fs::write(
+            temp_dir.path().join("build.gradle"),
+            "plugins { id 'java' }",
+        )
+        .unwrap();
+        fs::write(
+            temp_dir.path().join("settings.gradle"),
+            "rootProject.name = 'test'",
+        )
+        .unwrap();
+
+        let result = discover_scripts(temp_dir.path()).unwrap();
+        let gradle_files: Vec<_> = result
+            .iter()
+            .filter(|s| s.script_type == ScriptType::Gradle)
+            .collect();
+        // Even with multiple gradle files, we should get at most one entry
+        assert!(
+            gradle_files.len() <= 1,
+            "should have at most one Gradle script file per directory"
+        );
     }
 }
