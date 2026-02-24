@@ -193,6 +193,18 @@ fn build_command(
                 dir,
             ))
         }
+        ScriptType::Mage => {
+            let dir = path
+                .parent()
+                .context("Failed to get parent dir")?
+                .to_path_buf();
+            Ok((
+                "mage".to_string(),
+                vec![func.name.clone()],
+                dir,
+            ))
+        }
+
         ScriptType::CargoToml => {
             let dir = path
                 .parent()
