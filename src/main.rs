@@ -344,6 +344,26 @@ async fn run_application(args: Args) -> Result<()> {
                     }
                     Err(e) => ParseResult::Error(path.display().to_string(), e),
                 },
+                script::ScriptType::Mage => match script::list_mage_targets(&path, &category) {
+                    Ok(targets) => {
+                        let functions: Vec<script::ScriptFunction> = targets
+                            .into_iter()
+                            .filter(|t| !t.ignored)
+                            .map(|t| script::ScriptFunction {
+                                name: t.name,
+                                display_name: t.display_name,
+                                category: t.category,
+                                description: t.description,
+                                emoji: t.emoji,
+                                ignored: t.ignored,
+                                script_type: script::ScriptType::Mage,
+                            })
+                            .collect();
+                        ParseResult::Functions(functions)
+                    }
+                    Err(e) => ParseResult::Error(path.display().to_string(), e),
+                },
+
                 script::ScriptType::CargoToml => {
                     match script::list_cargo_targets(&path, &category) {
                         Ok(targets) => {

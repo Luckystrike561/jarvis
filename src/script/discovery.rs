@@ -12,6 +12,8 @@
 //! - **Justfiles** (`justfile`, etc.) - Recipes defined in just format
 //! - **Terraform / `OpenTofu`** (`*.tf`) — Terraform infrastructure-as-code commands
 //! - **Bazel** (`WORKSPACE`, `BUILD`, `MODULE.bazel`) — Bazel build targets
+//! - **Mage** (`magefile.go`, `mage.go`) — Mage build targets
+//! - **Mage** (`magefile.go`, `mage.go`) — Mage build targets
 //!
 //! ## Discovery Locations
 //!
@@ -51,6 +53,7 @@ pub enum ScriptType {
     DevboxJson,
     Gradle,
     Just,
+    Mage,
     Makefile,
     NxJson,
     PackageJson,
@@ -85,6 +88,8 @@ const MAKEFILE_NAMES: &[&str] = &["Makefile", "makefile", "GNUmakefile"];
 
 /// Justfile names to detect
 const JUSTFILE_NAMES: &[&str] = &["justfile", "Justfile", ".justfile"];
+/// Magefile names to detect
+const MAGEFILE_NAMES: &[&str] = &["magefile.go", "mage.go"];
 
 /// Cargo manifest names to detect
 const CARGO_TOML_NAMES: &[&str] = &["Cargo.toml"];
@@ -133,6 +138,7 @@ pub fn prewarm_tool_checks() {
     std::thread::spawn(crate::script::task_parser::is_task_available);
     std::thread::spawn(crate::script::makefile_parser::is_make_available);
     std::thread::spawn(crate::script::just_parser::is_just_available);
+    std::thread::spawn(crate::script::mage_parser::is_mage_available);
     std::thread::spawn(crate::script::cargo_parser::is_cargo_available);
     std::thread::spawn(crate::script::nx_parser::is_nx_available);
     std::thread::spawn(crate::script::terraform_parser::is_terraform_available);
@@ -233,6 +239,7 @@ pub fn discover_single_file(file_path: &Path) -> Result<ScriptFile> {
         | ScriptType::Task
         | ScriptType::Makefile
         | ScriptType::Just
+        | ScriptType::Mage
         | ScriptType::CargoToml
         | ScriptType::NxJson
         | ScriptType::Terraform
@@ -264,6 +271,7 @@ pub fn discover_single_file(file_path: &Path) -> Result<ScriptFile> {
         ScriptType::Task => format!("📋 {}", format_display_name(&name)),
         ScriptType::Makefile => format!("🔨 {}", format_display_name(&name)),
         ScriptType::Just => format!("⚡ {}", format_display_name(&name)),
+        ScriptType::Mage => format!("🧙 {}", format_display_name(&name)),
         ScriptType::CargoToml => format!("🦀 {}", format_display_name(&name)),
         ScriptType::NxJson => format!("🔷 {}", format_display_name(&name)),
         ScriptType::Terraform => format!("🏗️ {}", format_display_name(&name)),
@@ -580,6 +588,33 @@ fn discover_scripts_with_depth(scripts_dir: &Path, max_depth: usize) -> Result<V
                 continue;
             }
 
+            if MAGEFILE_NAMES.contains(&filename) {
+                if !crate::script::mage_parser::is_mage_available() {
+                    continue;
+                }
+
+                let name = if let Some(parent) = path.parent() {
+                    parent
+                        .file_name()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("mage")
+                        .to_string()
+                } else {
+                    "mage".to_string()
+                };
+
+                let category = name.clone();
+                let display_name = format!("🧙 {}", format_display_name(&name));
+
+                scripts.push(ScriptFile {
+                    path: path.to_path_buf(),
+                    name,
+                    category,
+                    display_name,
+                    script_type: ScriptType::Mage,
+                });
+                continue;
+            }
             if CARGO_TOML_NAMES.contains(&filename) {
                 if !crate::script::cargo_parser::is_cargo_available() {
                     continue;
