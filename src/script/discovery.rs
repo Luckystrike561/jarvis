@@ -13,7 +13,7 @@
 //! - **Terraform / `OpenTofu`** (`*.tf`) — Terraform infrastructure-as-code commands
 //! - **Bazel** (`WORKSPACE`, `BUILD`, `MODULE.bazel`) — Bazel build targets
 //! - **Mage** (`magefile.go`, `mage.go`) — Mage build targets
-//! - **Mage** (`magefile.go`, `mage.go`) — Mage build targets
+//! - **Gradle** (`build.gradle`, `build.gradle.kts`) — Gradle build tasks
 //!
 //! ## Discovery Locations
 //!
@@ -615,6 +615,7 @@ fn discover_scripts_with_depth(scripts_dir: &Path, max_depth: usize) -> Result<V
                 });
                 continue;
             }
+
             if CARGO_TOML_NAMES.contains(&filename) {
                 if !crate::script::cargo_parser::is_cargo_available() {
                     continue;
