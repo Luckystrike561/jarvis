@@ -198,11 +198,7 @@ fn build_command(
                 .parent()
                 .context("Failed to get parent dir")?
                 .to_path_buf();
-            Ok((
-                "mage".to_string(),
-                vec![func.name.clone()],
-                dir,
-            ))
+            Ok(("mage".to_string(), vec![func.name.clone()], dir))
         }
 
         ScriptType::CargoToml => {
