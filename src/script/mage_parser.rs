@@ -211,7 +211,7 @@ pub fn parse_mage_list_output(
 
         let description = target_annotations
             .and_then(|a| a.description.clone())
-            .or_else(|| {
+            .or({
                 if description_from_output.is_empty() {
                     None
                 } else {
