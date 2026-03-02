@@ -36,7 +36,7 @@ jobs:
         run: devbox run release
       
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: jarvis-${{ matrix.os }}
           path: |
