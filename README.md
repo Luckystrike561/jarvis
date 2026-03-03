@@ -20,10 +20,10 @@ A beautiful TUI for managing and executing scripts with zero configuration.
 
 ## Features
 
-- **Zero Configuration** - Auto-discovers bash functions, npm scripts, devbox scripts, Taskfile tasks, Makefile targets, Justfile recipes, Cargo commands, Nx targets, Terraform/OpenTofu commands, Gradle tasks, and Bazel targets
+- **Zero Configuration** - Auto-discovers bash functions, npm scripts, devbox scripts, Taskfile tasks, Makefile targets, Justfile recipes, Cargo commands, Nx targets, Terraform/OpenTofu commands, Gradle tasks, Bazel targets, and Mage targets
 - **Beautiful TUI** - Modern terminal interface built with Ratatui
 - **11 Built-in Themes** - Catppuccin Mocha/Macchiato/Frappe, Dracula, Nord, Tokyo Night, Solarized Dark, Gruvbox Dark, One Dark, Monokai, and Rose Pine with live preview picker
-- **Multi-Language Support** - Works with `.sh` files, `package.json`, `devbox.json`, `Taskfile.yml`, `Makefile`, `justfile`, `Cargo.toml`, Nx workspaces (`nx.json`/`project.json`), Terraform/OpenTofu (`.tf` files), Gradle (`build.gradle`/`build.gradle.kts`), and Bazel (`WORKSPACE`/`BUILD`/`MODULE.bazel`)
+- **Multi-Language Support** - Works with `.sh` files, `package.json`, `devbox.json`, `Taskfile.yml`, `Makefile`, `justfile`, `Cargo.toml`, Nx workspaces (`nx.json`/`project.json`), Terraform/OpenTofu (`.tf` files), Gradle (`build.gradle`/`build.gradle.kts`), Bazel (`WORKSPACE`/`BUILD`/`MODULE.bazel`), and Mage (`magefile.go`, `mage.go`)
 - **Single Binary** - Compile once, run anywhere
 
 ## Installation
@@ -193,6 +193,21 @@ Jarvis discovers Gradle projects and lists available tasks. Supports both the Gr
 
 Jarvis discovers Bazel workspaces and lists binary and test targets using `bazel query`. Binary targets are run with `bazel run` and test targets with `bazel test`. Supports both `bazelisk` and `bazel` with automatic detection.
 
+**Mage** - From `magefile.go` or `mage.go`:
+
+Jarvis discovers Mage targets by running `mage -l`. Annotation comments (`@emoji`, `@description`, `@ignore`) placed above exported Go functions are also parsed for TUI customisation.
+
+```go
+// @emoji 🔨
+// @description Compile the binary
+func Build(mg.Deps) {
+    // ...
+}
+
+// @ignore
+func internalHelper() {}
+```
+
 > **Note:** Task support requires the `task` binary to be installed. See [taskfile.dev](https://taskfile.dev) for installation instructions.
 
 > **Note:** Make support requires the `make` binary to be installed. It is pre-installed on most Unix systems.
@@ -208,6 +223,9 @@ Jarvis discovers Bazel workspaces and lists binary and test targets using `bazel
 > **Note:** Gradle support requires the Gradle wrapper (`gradlew`) or the `gradle` binary. See [gradle.org](https://gradle.org) for installation instructions.
 
 > **Note:** Bazel support requires the `bazelisk` or `bazel` binary. Jarvis checks for `bazelisk` first and falls back to `bazel`. See [bazel.build](https://bazel.build) for installation instructions.
+
+> **Note:** Mage support requires the `mage` binary to be installed. See [magefile.org](https://magefile.org) for installation instructions.
+
 
 ### Function Annotations
 
