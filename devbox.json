@@ -10,7 +10,8 @@
     "go-task@3.45.5",
     "just@latest",
     "opentofu@latest",
-    "gradle@latest"
+    "gradle@latest",
+    "act@latest"
   ],
   "shell": {
     "init_hook": [
