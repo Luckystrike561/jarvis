@@ -263,6 +263,32 @@ fn build_command(
                 path.clone(),
             ))
         }
+        ScriptType::GithubActions => {
+            // path is the .github/workflows/ directory; go up twice to get repo root
+            let workflows_dir = path.clone();
+            let repo_root = workflows_dir
+                .parent()
+                .context("Failed to get .github parent dir")?
+                .parent()
+                .context("Failed to get repo root from .github")?
+                .to_path_buf();
+            if crate::script::github_actions_parser::is_gh_available() {
+                Ok((
+                    "gh".to_string(),
+                    vec!["workflow".to_string(), "run".to_string(), func.name.clone()],
+                    repo_root,
+                ))
+            } else {
+                Ok((
+                    "echo".to_string(),
+                    vec![format!(
+                        "GitHub Actions workflow: {} (install gh CLI to trigger workflow_dispatch)",
+                        func.name
+                    )],
+                    repo_root,
+                ))
+            }
+        }
     }
 }
 

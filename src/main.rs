@@ -201,7 +201,7 @@ async fn run_application(args: Args) -> Result<()> {
         }
 
         if script_files.is_empty() {
-            anyhow::bail!("No scripts found in {} (also checked: ./script/, ./scripts/, ./jarvis/). Add bash scripts (.sh), package.json, devbox.json, Taskfile.yml, Makefile, justfile, Cargo.toml, nx.json, *.tf, build.gradle, or WORKSPACE/BUILD (Bazel) files to get started.", current_dir.display());
+            anyhow::bail!("No scripts found in {} (also checked: ./script/, ./scripts/, ./jarvis/). Add bash scripts (.sh), package.json, devbox.json, Taskfile.yml, Makefile, justfile, Cargo.toml, nx.json, *.tf, build.gradle, WORKSPACE/BUILD (Bazel), or .github/workflows/ (GitHub Actions) files to get started.", current_dir.display());
         }
 
         (script_files, current_dir)
@@ -465,6 +465,27 @@ async fn run_application(args: Args) -> Result<()> {
                     }
                     Err(e) => ParseResult::Error(path.display().to_string(), e),
                 },
+                script::ScriptType::GithubActions => {
+                    match script::list_github_workflows(&path, &category) {
+                        Ok(workflows) => {
+                            let functions: Vec<script::ScriptFunction> = workflows
+                                .into_iter()
+                                .filter(|w| !w.ignored)
+                                .map(|w| script::ScriptFunction {
+                                    name: w.file_name,
+                                    display_name: w.display_name,
+                                    category: w.category,
+                                    description: w.description,
+                                    emoji: None,
+                                    ignored: w.ignored,
+                                    script_type: script::ScriptType::GithubActions,
+                                })
+                                .collect();
+                            ParseResult::Functions(functions)
+                        }
+                        Err(e) => ParseResult::Error(path.display().to_string(), e),
+                    }
+                }
             })
         })
         .collect();
