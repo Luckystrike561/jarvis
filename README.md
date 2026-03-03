@@ -192,6 +192,7 @@ Jarvis discovers Gradle projects and lists available tasks. Supports both the Gr
 **Bazel** - From `WORKSPACE`, `BUILD`, `MODULE.bazel`:
 
 Jarvis discovers Bazel workspaces and lists binary and test targets using `bazel query`. Binary targets are run with `bazel run` and test targets with `bazel test`. Supports both `bazelisk` and `bazel` with automatic detection.
+
 **Mage** - From `magefile.go` or `mage.go`:
 
 Jarvis discovers Mage targets by running `mage -l`. Annotation comments (`@emoji`, `@description`, `@ignore`) placed above exported Go functions are also parsed for TUI customisation.
@@ -206,7 +207,6 @@ func Build(mg.Deps) {
 // @ignore
 func internalHelper() {}
 ```
-
 
 > **Note:** Task support requires the `task` binary to be installed. See [taskfile.dev](https://taskfile.dev) for installation instructions.
 
