@@ -195,7 +195,11 @@ Jarvis discovers Bazel workspaces and lists binary and test targets using `bazel
 
 **GitHub Actions** - From `.github/workflows/*.yml` / `*.yaml`:
 
-Jarvis discovers GitHub Actions workflow files and displays their name, triggers, and jobs in the TUI under a **GitHub Actions** category. Workflows are **read-only** by default. If the `gh` CLI is installed and the workflow has a `workflow_dispatch` trigger, it can be triggered directly from the TUI:
+Jarvis discovers GitHub Actions workflow files and displays their name, triggers, and jobs in the TUI under a **GitHub Actions** category. Workflows support three execution modes (in priority order):
+
+1. **`act` (local, recommended)** — If [`act`](https://github.com/nektos/act) is installed, runs the workflow locally in Docker via `act -W .github/workflows/<file>`. No GitHub account needed.
+2. **`gh workflow run` (remote)** — If the `gh` CLI is installed and the workflow has a `workflow_dispatch` trigger, dispatches the run to GitHub Actions.
+3. **Informational echo** — Shows the workflow name and install instructions if neither tool is available.
 
 ```yaml
 name: CI
@@ -228,7 +232,7 @@ jobs:
 > **Note:** Gradle support requires the Gradle wrapper (`gradlew`) or the `gradle` binary. See [gradle.org](https://gradle.org) for installation instructions.
 
 > **Note:** Bazel support requires the `bazelisk` or `bazel` binary. Jarvis checks for `bazelisk` first and falls back to `bazel`. See [bazel.build](https://bazel.build) for installation instructions.
-> **Note:** GitHub Actions discovery is read-only by default. To trigger `workflow_dispatch` workflows from the TUI, install the `gh` CLI. See [cli.github.com](https://cli.github.com) for installation instructions.
+> **Note:** GitHub Actions discovery is read-only by default. To run workflows **locally**, install `act` (requires Docker): see [github.com/nektos/act](https://github.com/nektos/act) for installation. To trigger `workflow_dispatch` workflows **remotely**, install the `gh` CLI: see [cli.github.com](https://cli.github.com). Jarvis checks for `act` first and falls back to `gh`.
 
 
 ### Function Annotations

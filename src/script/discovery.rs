@@ -139,6 +139,7 @@ pub fn prewarm_tool_checks() {
     std::thread::spawn(crate::script::terraform_parser::is_terraform_available);
     std::thread::spawn(crate::script::gradle_parser::is_gradle_available);
     std::thread::spawn(crate::script::github_actions_parser::is_gh_available);
+    std::thread::spawn(crate::script::github_actions_parser::is_act_available);
 }
 
 /// Formats a filename into a display-friendly name

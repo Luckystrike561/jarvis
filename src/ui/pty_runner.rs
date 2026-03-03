@@ -272,7 +272,15 @@ fn build_command(
                 .parent()
                 .context("Failed to get repo root from .github")?
                 .to_path_buf();
-            if crate::script::github_actions_parser::is_gh_available() {
+            if crate::script::github_actions_parser::is_act_available() {
+                // Prefer act: runs the workflow locally via Docker
+                Ok((
+                    "act".to_string(),
+                    vec!["-W".to_string(), format!(".github/workflows/{}", func.name)],
+                    repo_root,
+                ))
+            } else if crate::script::github_actions_parser::is_gh_available() {
+                // Fallback: trigger remotely with gh CLI (requires workflow_dispatch)
                 Ok((
                     "gh".to_string(),
                     vec!["workflow".to_string(), "run".to_string(), func.name.clone()],
@@ -282,7 +290,7 @@ fn build_command(
                 Ok((
                     "echo".to_string(),
                     vec![format!(
-                        "GitHub Actions workflow: {} (install gh CLI to trigger workflow_dispatch)",
+                        "GitHub Actions workflow '{}' — install 'act' to run locally or 'gh' CLI to trigger remotely",
                         func.name
                     )],
                     repo_root,

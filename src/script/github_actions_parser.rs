@@ -17,22 +17,42 @@
 //!
 //! - [`GithubWorkflow`] — Represents a single workflow file with display metadata
 //! - [`is_gh_available`] — Checks if the `gh` CLI is installed
+//! - [`is_act_available`] — Checks if the `act` CLI is installed (nektos/act)
 //! - [`list_workflows`] — Main function to list workflows from `.github/workflows/`
 //!
 //! ## Execution
 //!
 //! Workflows are **read-only** by default (informational display).
-//! If `gh` CLI is available and the workflow has a `workflow_dispatch` trigger,
-//! the workflow can be triggered with `gh workflow run <filename>`.
+//! If `act` is installed, the workflow is run locally via Docker using
+//! `act -W .github/workflows/<filename>`. Otherwise, if `gh` CLI is available,
+//! `gh workflow run <filename>` is used to trigger the workflow remotely.
 //!
 //! ## Availability Caching
 //!
-//! The `gh` binary availability is cached using [`OnceLock`] to avoid
+//! The `gh` and `act` binary availability are each cached using [`OnceLock`] to avoid
 //! repeated process spawning during discovery.
 
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
+
+/// Cache for act CLI availability check (checked once per process)
+static ACT_AVAILABLE: OnceLock<bool> = OnceLock::new();
+
+/// Check if the `act` CLI is available (<https://github.com/nektos/act>).
+///
+/// `act` allows running GitHub Actions workflows locally using Docker.
+pub fn is_act_available() -> bool {
+    *ACT_AVAILABLE.get_or_init(|| {
+        Command::new("act")
+            .arg("--version")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    })
+}
 
 use anyhow::{Context, Result};
 
