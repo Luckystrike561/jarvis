@@ -74,6 +74,25 @@ pub fn is_gh_available() -> bool {
     })
 }
 
+/// Select the best trigger event to pass to `act` for a given workflow file.
+///
+/// Event priority: `workflow_dispatch` → `push` → `pull_request` → first trigger → `None`.
+/// Returning `None` means letting `act` pick its own default.
+pub fn select_act_event(path: &Path) -> Option<String> {
+    let content = std::fs::read_to_string(path).ok()?;
+    let triggers = extract_triggers(&content);
+    if triggers.is_empty() {
+        return None;
+    }
+    const PRIORITY: &[&str] = &["workflow_dispatch", "push", "pull_request", "schedule"];
+    for event in PRIORITY {
+        if triggers.iter().any(|t| t == *event) {
+            return Some((*event).to_string());
+        }
+    }
+    triggers.into_iter().next()
+}
+
 /// A parsed GitHub Actions workflow item for TUI display.
 #[derive(Debug, Clone)]
 pub struct GithubWorkflow {
@@ -493,5 +512,72 @@ mod tests {
         let workflows = list_workflows(temp_dir.path(), "GitHub Actions").unwrap();
         assert_eq!(workflows.len(), 1);
         assert_eq!(workflows[0].file_name, "ci.yml");
+    }
+
+    #[test]
+    fn test_select_act_event_workflow_dispatch_preferred() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = write_workflow(
+            temp_dir.path(),
+            "deploy.yml",
+            "on:\n  push:\n  workflow_dispatch:\njobs:\n  deploy:\n    runs-on: ubuntu-latest\n",
+        );
+        // workflow_dispatch should win over push
+        assert_eq!(
+            select_act_event(&path),
+            Some("workflow_dispatch".to_string())
+        );
+    }
+
+    #[test]
+    fn test_select_act_event_push_fallback() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = write_workflow(
+            temp_dir.path(),
+            "ci.yml",
+            "on:\n  push:\n  pull_request:\njobs:\n  build:\n    runs-on: ubuntu-latest\n",
+        );
+        // push wins over pull_request
+        assert_eq!(select_act_event(&path), Some("push".to_string()));
+    }
+
+    #[test]
+    fn test_select_act_event_pull_request_fallback() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = write_workflow(
+            temp_dir.path(),
+            "pr.yml",
+            "on:\n  pull_request:\njobs:\n  check:\n    runs-on: ubuntu-latest\n",
+        );
+        assert_eq!(select_act_event(&path), Some("pull_request".to_string()));
+    }
+
+    #[test]
+    fn test_select_act_event_inline_single_trigger() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = write_workflow(
+            temp_dir.path(),
+            "simple.yml",
+            "on: push\njobs:\n  build:\n    runs-on: ubuntu-latest\n",
+        );
+        assert_eq!(select_act_event(&path), Some("push".to_string()));
+    }
+
+    #[test]
+    fn test_select_act_event_no_triggers_returns_none() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = write_workflow(
+            temp_dir.path(),
+            "empty.yml",
+            "jobs:\n  build:\n    runs-on: ubuntu-latest\n",
+        );
+        assert_eq!(select_act_event(&path), None);
+    }
+
+    #[test]
+    fn test_select_act_event_nonexistent_file_returns_none() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_dir.path().join("nonexistent.yml");
+        assert_eq!(select_act_event(&path), None);
     }
 }

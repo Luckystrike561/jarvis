@@ -273,12 +273,17 @@ fn build_command(
                 .context("Failed to get repo root from .github")?
                 .to_path_buf();
             if crate::script::github_actions_parser::is_act_available() {
-                // Prefer act: runs the workflow locally via Docker
-                Ok((
-                    "act".to_string(),
-                    vec!["-W".to_string(), format!(".github/workflows/{}", func.name)],
-                    repo_root,
-                ))
+                // Prefer act: runs the workflow locally via Docker.
+                // Pass the correct trigger event so act doesn't silently use the wrong one.
+                let workflow_path = workflows_dir.join(&func.name);
+                let event = crate::script::github_actions_parser::select_act_event(&workflow_path);
+                let workflow_flag = format!(".github/workflows/{}", func.name);
+                let args = if let Some(ev) = event {
+                    vec![ev, "-W".to_string(), workflow_flag]
+                } else {
+                    vec!["-W".to_string(), workflow_flag]
+                };
+                Ok(("act".to_string(), args, repo_root))
             } else if crate::script::github_actions_parser::is_gh_available() {
                 // Fallback: trigger remotely with gh CLI (requires workflow_dispatch)
                 Ok((
@@ -290,7 +295,7 @@ fn build_command(
                 Ok((
                     "echo".to_string(),
                     vec![format!(
-                        "GitHub Actions workflow '{}' — install 'act' to run locally or 'gh' CLI to trigger remotely",
+                        "GitHub Actions workflow '{}' \u{2014} install 'act' (requires Docker) to run locally or 'gh' CLI to trigger remotely",
                         func.name
                     )],
                     repo_root,
@@ -750,6 +755,48 @@ mod tests {
         assert_eq!(cwd, PathBuf::from("/workspace"));
     }
 
+    #[test]
+    fn test_build_command_github_actions() {
+        let func = make_func("hello.yml", ScriptType::GithubActions);
+        // path is the .github/workflows directory
+        let sf = make_script_file("/repo/.github/workflows", ScriptType::GithubActions);
+
+        let (program, args, cwd) = build_command(&func, &sf).unwrap();
+
+        // One of three branches depending on tools available in CI
+        assert!(
+            program == "act" || program == "gh" || program == "echo",
+            "unexpected program: {program}"
+        );
+        // cwd is always the repo root (two levels above workflows dir)
+        assert_eq!(cwd, PathBuf::from("/repo"));
+
+        match program.as_str() {
+            "act" => {
+                // Must include -W flag and the workflow path
+                assert!(args.contains(&"-W".to_string()));
+                assert!(args.iter().any(|a| a.contains("hello.yml")));
+            }
+            "gh" => {
+                assert_eq!(args, vec!["workflow", "run", "hello.yml"]);
+            }
+            _ => {
+                // echo fallback: message must reference the workflow name
+                assert!(args[0].contains("hello.yml"));
+            }
+        }
+    }
+
+    #[test]
+    fn test_build_command_github_actions_repo_root_resolution() {
+        // Verify that the cwd is always resolved two levels above the workflows dir
+        let func = make_func("ci.yml", ScriptType::GithubActions);
+        let sf = make_script_file("/my/project/.github/workflows", ScriptType::GithubActions);
+
+        let (_program, _args, cwd) = build_command(&func, &sf).unwrap();
+
+        assert_eq!(cwd, PathBuf::from("/my/project"));
+    }
     // --- CommandHistory tests ---
 
     #[test]
