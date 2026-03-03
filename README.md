@@ -20,10 +20,10 @@ A beautiful TUI for managing and executing scripts with zero configuration.
 
 ## Features
 
-- **Zero Configuration** - Auto-discovers bash functions, npm scripts, devbox scripts, Taskfile tasks, Makefile targets, Justfile recipes, Cargo commands, Nx targets, Terraform/OpenTofu commands, Gradle tasks, and Bazel targets
+- **Zero Configuration** - Auto-discovers bash functions, npm scripts, devbox scripts, Taskfile tasks, Makefile targets, Justfile recipes, Cargo commands, Nx targets, Terraform/OpenTofu commands, Gradle tasks, Bazel targets, and GitHub Actions workflows
 - **Beautiful TUI** - Modern terminal interface built with Ratatui
 - **11 Built-in Themes** - Catppuccin Mocha/Macchiato/Frappe, Dracula, Nord, Tokyo Night, Solarized Dark, Gruvbox Dark, One Dark, Monokai, and Rose Pine with live preview picker
-- **Multi-Language Support** - Works with `.sh` files, `package.json`, `devbox.json`, `Taskfile.yml`, `Makefile`, `justfile`, `Cargo.toml`, Nx workspaces (`nx.json`/`project.json`), Terraform/OpenTofu (`.tf` files), Gradle (`build.gradle`/`build.gradle.kts`), and Bazel (`WORKSPACE`/`BUILD`/`MODULE.bazel`)
+- **Multi-Language Support** - Works with `.sh` files, `package.json`, `devbox.json`, `Taskfile.yml`, `Makefile`, `justfile`, `Cargo.toml`, Nx workspaces (`nx.json`/`project.json`), Terraform/OpenTofu (`.tf` files), Gradle (`build.gradle`/`build.gradle.kts`), Bazel (`WORKSPACE`/`BUILD`/`MODULE.bazel`), and GitHub Actions (`.github/workflows/*.yml`)
 - **Single Binary** - Compile once, run anywhere
 
 ## Installation
@@ -193,6 +193,26 @@ Jarvis discovers Gradle projects and lists available tasks. Supports both the Gr
 
 Jarvis discovers Bazel workspaces and lists binary and test targets using `bazel query`. Binary targets are run with `bazel run` and test targets with `bazel test`. Supports both `bazelisk` and `bazel` with automatic detection.
 
+**GitHub Actions** - From `.github/workflows/*.yml` / `*.yaml`:
+
+Jarvis discovers GitHub Actions workflow files and displays their name, triggers, and jobs in the TUI under a **GitHub Actions** category. Workflows are **read-only** by default. If the `gh` CLI is installed and the workflow has a `workflow_dispatch` trigger, it can be triggered directly from the TUI:
+
+```yaml
+name: CI
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cargo build --release
+```
+
 > **Note:** Task support requires the `task` binary to be installed. See [taskfile.dev](https://taskfile.dev) for installation instructions.
 
 > **Note:** Make support requires the `make` binary to be installed. It is pre-installed on most Unix systems.
@@ -208,6 +228,8 @@ Jarvis discovers Bazel workspaces and lists binary and test targets using `bazel
 > **Note:** Gradle support requires the Gradle wrapper (`gradlew`) or the `gradle` binary. See [gradle.org](https://gradle.org) for installation instructions.
 
 > **Note:** Bazel support requires the `bazelisk` or `bazel` binary. Jarvis checks for `bazelisk` first and falls back to `bazel`. See [bazel.build](https://bazel.build) for installation instructions.
+> **Note:** GitHub Actions discovery is read-only by default. To trigger `workflow_dispatch` workflows from the TUI, install the `gh` CLI. See [cli.github.com](https://cli.github.com) for installation instructions.
+
 
 ### Function Annotations
 
