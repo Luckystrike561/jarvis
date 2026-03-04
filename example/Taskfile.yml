@@ -7,36 +7,80 @@ vars:
 
 tasks:
   default:
-    desc: Default task
+    desc: Default task - print greeting
     cmds:
       - echo "{{.GREETING}}"
 
   # @emoji 🔨
   build:
-    desc: Build the project
+    desc: Build the project in debug mode
     cmds:
-      - cargo build
+      - echo "🔨 Building project in debug mode..."
+      - echo "   Compiling sources..."
+      - echo "   Linking binaries..."
+      - echo "✅ Build complete!"
 
   # @emoji 🧪
   test:
-    desc: Run tests
-    deps: [build]
+    desc: Run the test suite
     cmds:
-      - cargo test
+      - echo "🧪 Running test suite..."
+      - echo "   Running unit tests... 42/42 passed"
+      - echo "   Running integration tests... 8/8 passed"
+      - echo "✅ All tests passed!"
 
   # @emoji ✅
-  # @description Run clippy linter and format checker
+  # @description Run linter and format checker
   check:
-    desc: Run clippy and format check
+    desc: Run linter and format checker
     cmds:
-      - cargo clippy -- -D warnings
-      - cargo fmt -- --check
+      - echo "✅ Running linter..."
+      - echo "   No warnings found."
+      - echo "   Checking code format..."
+      - echo "   All files are properly formatted."
+      - echo "✅ Check passed!"
 
   # @emoji 🧹
   clean:
     desc: Clean build artifacts
     cmds:
-      - cargo clean
+      - echo "🧹 Cleaning build artifacts..."
+      - echo "   Removing target/ directory..."
+      - echo "   Removing dist/ directory..."
+      - echo "✅ Clean complete!"
+
+  # @emoji 📦
+  release:
+    desc: Build optimized release binary
+    cmds:
+      - echo "📦 Building optimized release binary..."
+      - echo "   Optimizing with LTO..."
+      - echo "   Stripping debug symbols..."
+      - echo "✅ Release build complete! Binary at ./target/release/app"
+
+  # @emoji 🚀
+  deploy:
+    desc: Deploy to staging environment
+    cmds:
+      - echo "🚀 Deploying to staging..."
+      - echo "   Uploading artifacts..."
+      - echo "   Restarting services..."
+      - echo "✅ Deployed successfully!"
+
+  # @emoji ✅
+  exit_success:
+    desc: Exit with code 0 — test success display in UI
+    cmds:
+      - echo "✅ This task exits successfully (code 0)."
+      - exit 0
+
+  # @emoji ❌
+  exit_failure:
+    desc: Exit with code 1 — test error/failure display in UI
+    cmds:
+      - echo "❌ This task exits with an error (code 1)."
+      - echo "   Jarvis should indicate this task failed."
+      - exit 1
 
   # @ignore
   _internal_helper:

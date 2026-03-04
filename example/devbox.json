@@ -1,14 +1,17 @@
 {
   "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.16.0/.schema/devbox.schema.json",
-  "name": "test",
-  "description": "simple test",
-  "packages": {
-    "jq": "1.8.1"
-  },
+  "name": "jarvis-example",
+  "description": "Example devbox config for testing Jarvis devbox integration",
+  "packages": {},
   "shell": {
     "init_hook": [],
     "scripts": {
-      "help": "jq .shell.scripts devbox.json"
+      "help": "echo 'Available scripts: help, build, test, check, clean, deploy'",
+      "build": "echo '🔨 Building project...' && echo '✅ Build complete!'",
+      "test": "echo '🧪 Running tests...' && echo '   42 tests passed' && echo '✅ All tests passed!'",
+      "check": "echo '✅ Running linter and format check...' && echo '✅ No issues found!'",
+      "clean": "echo '🧹 Cleaning build artifacts...' && echo '✅ Clean complete!'",
+      "deploy": "echo '🚀 Deploying application...' && echo '✅ Deployed successfully!'"
     }
   },
   "env": {

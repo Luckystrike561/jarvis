@@ -16,6 +16,13 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Deploy to ${{ inputs.environment }}
-        run: echo "Deploying to ${{ inputs.environment }}"
+      - name: Checkout
+        run: echo "📥 Checking out source code..."
+      - name: Build release
+        run: echo "📦 Building release binary... done!"
+      - name: Upload artifacts
+        run: echo "⬆️  Uploading artifacts to ${{ inputs.environment }}..."
+      - name: Restart services
+        run: echo "🔄 Restarting services in ${{ inputs.environment }}..."
+      - name: Done
+        run: echo "✅ Deployed to ${{ inputs.environment }} successfully!"
