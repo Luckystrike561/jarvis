@@ -12,6 +12,7 @@
     "opentofu@latest",
     "gradle@latest",
     "act@latest"
+    "mage@latest"
   ],
   "shell": {
     "init_hook": [

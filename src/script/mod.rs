@@ -19,6 +19,7 @@
 //! | Gradle | `build.gradle`, `build.gradle.kts` | [`gradle_parser::list_tasks`] |
 //! | Bazel | `WORKSPACE`, `BUILD`, `MODULE.bazel` | [`bazel_parser::list_targets`] |
 //! | GitHub Actions | `.github/workflows/*.yml` | [`github_actions_parser::list_workflows`] |
+//! | Mage | `magefile.go`, `mage.go` | [`mage_parser::list_targets`] |
 //!
 
 pub mod bazel_parser;
@@ -28,6 +29,7 @@ pub mod discovery;
 pub mod github_actions_parser;
 pub mod gradle_parser;
 pub mod just_parser;
+pub mod mage_parser;
 pub mod makefile_parser;
 pub mod npm_parser;
 pub mod nx_parser;
@@ -46,6 +48,7 @@ pub use discovery::{
 pub use github_actions_parser::list_workflows as list_github_workflows;
 pub use gradle_parser::list_tasks as list_gradle_tasks;
 pub use just_parser::list_recipes as list_just_recipes;
+pub use mage_parser::list_targets as list_mage_targets;
 pub use makefile_parser::list_targets as list_make_targets;
 pub use npm_parser::parse_package_json;
 pub use nx_parser::list_targets as list_nx_targets;
