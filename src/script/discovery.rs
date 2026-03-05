@@ -280,7 +280,7 @@ pub fn discover_single_file(file_path: &Path) -> Result<ScriptFile> {
         ScriptType::NxJson => format!("🔷 {}", format_display_name(&name)),
         ScriptType::Terraform => format!("🏗️ {}", format_display_name(&name)),
         ScriptType::Gradle => format!("🐘 {}", format_display_name(&name)),
-        ScriptType::GithubActions => format!("\u{1F419} {}", format_display_name(&name)),
+        ScriptType::GithubActions => format!("🐙 {}", format_display_name(&name)),
         _ => format_display_name(&name),
     };
 

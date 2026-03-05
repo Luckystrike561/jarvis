@@ -36,6 +36,10 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
 
+use anyhow::{Context, Result};
+
+use crate::script::discovery::format_display_name;
+
 /// Cache for act CLI availability check (checked once per process)
 static ACT_AVAILABLE: OnceLock<bool> = OnceLock::new();
 
@@ -53,10 +57,6 @@ pub fn is_act_available() -> bool {
             .unwrap_or(false)
     })
 }
-
-use anyhow::{Context, Result};
-
-use crate::script::discovery::format_display_name;
 
 /// Cache for gh CLI availability check (checked once per process)
 static GH_AVAILABLE: OnceLock<bool> = OnceLock::new();
@@ -132,7 +132,7 @@ pub fn parse_workflow_file(path: &Path, category: &str) -> Result<GithubWorkflow
         .to_string();
 
     // Extract the top-level `name:` field (not indented)
-    let workflow_name = extract_workflow_name(&content).unwrap_or_else(|| file_stem.clone());
+    let workflow_name = extract_workflow_name(&content).unwrap_or(file_stem);
 
     // Extract trigger events from the `on:` block
     let triggers = extract_triggers(&content);
@@ -180,11 +180,13 @@ fn extract_workflow_name(content: &str) -> Option<String> {
 fn extract_triggers(content: &str) -> Vec<String> {
     let mut triggers = Vec::new();
     let mut in_on_block = false;
+    let mut block_indent: Option<usize> = None;
 
     for line in content.lines() {
         // Detect the top-level `on:` key
         if let Some(after_on) = line.strip_prefix("on:") {
             in_on_block = true;
+            block_indent = None;
             let inline = after_on.trim();
 
             if inline.is_empty() {
@@ -218,18 +220,24 @@ fn extract_triggers(content: &str) -> Vec<String> {
             continue;
         }
 
-        // Inside the `on:` block — look for keys at exactly 2-space indent
-        if line.starts_with("  ") && !line.starts_with("   ") {
+        // Any top-level key (no indent) ends the `on:` block
+        if !line.starts_with(' ') && !line.starts_with('\t') && !line.trim().is_empty() {
+            in_on_block = false;
+            block_indent = None;
+            continue;
+        }
+
+        // Detect the indent level from the first indented line inside the `on:` block
+        let leading = line.len() - line.trim_start().len();
+        if leading == 0 {
+            continue;
+        }
+        let indent = block_indent.get_or_insert(leading);
+        if leading == *indent {
             let key = line.trim_start().trim_end_matches(':').trim();
             if !key.is_empty() && !key.starts_with('#') {
                 triggers.push(key.to_string());
             }
-            continue;
-        }
-
-        // Any top-level key (no indent) ends the `on:` block
-        if !line.starts_with(' ') && !line.starts_with('\t') && !line.trim().is_empty() {
-            in_on_block = false;
         }
     }
 
@@ -322,13 +330,7 @@ pub fn list_workflows(workflows_dir: &Path, category: &str) -> Result<Vec<Github
         let path = entry.path();
         match parse_workflow_file(&path, category) {
             Ok(workflow) => workflows.push(workflow),
-            Err(e) => {
-                eprintln!(
-                    "Warning: Failed to parse workflow file {}: {}",
-                    path.display(),
-                    e
-                );
-            }
+            Err(e) => return Err(e),
         }
     }
 

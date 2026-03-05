@@ -292,18 +292,11 @@ fn build_command(
                     vec!["-W".to_string(), workflow_flag]
                 };
                 Ok(("act".to_string(), args, repo_root))
-            } else if crate::script::github_actions_parser::is_gh_available() {
-                // Fallback: trigger remotely with gh CLI (requires workflow_dispatch)
-                Ok((
-                    "gh".to_string(),
-                    vec!["workflow".to_string(), "run".to_string(), func.name.clone()],
-                    repo_root,
-                ))
             } else {
                 Ok((
                     "echo".to_string(),
                     vec![format!(
-                        "GitHub Actions workflow '{}' \u{2014} install 'act' (requires Docker) to run locally or 'gh' CLI to trigger remotely",
+                        "GitHub Actions workflow '{}' \u{2014} install 'act' to run locally: https://github.com/nektos/act",
                         func.name
                     )],
                     repo_root,
@@ -771,9 +764,9 @@ mod tests {
 
         let (program, args, cwd) = build_command(&func, &sf).unwrap();
 
-        // One of three branches depending on tools available in CI
+        // One of two branches depending on tools available in CI
         assert!(
-            program == "act" || program == "gh" || program == "echo",
+            program == "act" || program == "echo",
             "unexpected program: {program}"
         );
         // cwd is always the repo root (two levels above workflows dir)
@@ -784,9 +777,6 @@ mod tests {
                 // Must include -W flag and the workflow path
                 assert!(args.contains(&"-W".to_string()));
                 assert!(args.iter().any(|a| a.contains("hello.yml")));
-            }
-            "gh" => {
-                assert_eq!(args, vec!["workflow", "run", "hello.yml"]);
             }
             _ => {
                 // echo fallback: message must reference the workflow name
