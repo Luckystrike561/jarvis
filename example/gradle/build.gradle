@@ -1,31 +1,60 @@
-plugins {
-    id 'java'
-}
+// Example Gradle build file for testing Jarvis Gradle integration
+// See: https://gradle.org/
 
 group = 'com.example'
 version = '0.1.0'
 
-java {
-    sourceCompatibility = JavaVersion.VERSION_17
-    targetCompatibility = JavaVersion.VERSION_17
-}
-
-repositories {
-    mavenCentral()
-}
-
-dependencies {
-}
-
 tasks.register('hello') {
+    group = 'Demo'
+    description = 'Print a hello message'
     doLast {
-        println 'Hello from Gradle!'
+        println 'Hello from Jarvis Gradle example!'
+    }
+}
+
+tasks.register('build') {
+    group = 'Demo'
+    description = 'Build the project (demo - prints a message)'
+    doLast {
+        println "Building project: ${project.name} v${project.version}"
+        println '✅ Build complete!'
+    }
+}
+
+tasks.register('test') {
+    group = 'Demo'
+    description = 'Run tests (demo - prints a message)'
+    doLast {
+        println '🧪 Running tests...'
+        println '   42 tests passed, 0 failed'
+        println '✅ All tests passed!'
+    }
+}
+
+tasks.register('clean') {
+    group = 'Demo'
+    description = 'Clean build artifacts (demo - prints a message)'
+    doLast {
+        println '🧹 Cleaning build artifacts...'
+        println '✅ Clean complete!'
+    }
+}
+
+tasks.register('deploy') {
+    group = 'Demo'
+    description = 'Deploy the application (demo - prints a message)'
+    doLast {
+        println '🚀 Deploying application...'
+        println '✅ Deployed successfully!'
     }
 }
 
 tasks.register('buildInfo') {
+    group = 'Demo'
+    description = 'Show build information'
     doLast {
-        println "Building project: ${project.name}"
+        println "Project: ${project.name}"
         println "Version: ${project.version}"
+        println "Group: ${project.group}"
     }
 }

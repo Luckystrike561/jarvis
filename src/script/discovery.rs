@@ -51,6 +51,7 @@ pub enum ScriptType {
     Bash,
     CargoToml,
     DevboxJson,
+    GithubActions,
     Gradle,
     Just,
     Mage,
@@ -143,6 +144,8 @@ pub fn prewarm_tool_checks() {
     std::thread::spawn(crate::script::nx_parser::is_nx_available);
     std::thread::spawn(crate::script::terraform_parser::is_terraform_available);
     std::thread::spawn(crate::script::gradle_parser::is_gradle_available);
+    std::thread::spawn(crate::script::github_actions_parser::is_gh_available);
+    std::thread::spawn(crate::script::github_actions_parser::is_act_available);
 }
 
 /// Formats a filename into a display-friendly name
@@ -234,6 +237,7 @@ pub fn discover_single_file(file_path: &Path) -> Result<ScriptFile> {
     // Get the file stem (name without extension) for category/display name
     let name = match script_type {
         ScriptType::Bazel
+        | ScriptType::GithubActions
         | ScriptType::PackageJson
         | ScriptType::DevboxJson
         | ScriptType::Task
@@ -276,6 +280,7 @@ pub fn discover_single_file(file_path: &Path) -> Result<ScriptFile> {
         ScriptType::NxJson => format!("🔷 {}", format_display_name(&name)),
         ScriptType::Terraform => format!("🏗️ {}", format_display_name(&name)),
         ScriptType::Gradle => format!("🐘 {}", format_display_name(&name)),
+        ScriptType::GithubActions => format!("🐙 {}", format_display_name(&name)),
         _ => format_display_name(&name),
     };
 
@@ -426,6 +431,36 @@ fn discover_scripts_with_depth(scripts_dir: &Path, max_depth: usize) -> Result<V
             "Path '{}' exists but is not a directory",
             scripts_dir.display()
         );
+    }
+
+    // Detect .github/workflows/ directory and add a single ScriptFile entry.
+    // Each workflow file within it becomes an individual item during parsing.
+    let github_workflows_dir = scripts_dir.join(".github").join("workflows");
+    if github_workflows_dir.is_dir() {
+        let has_workflows = std::fs::read_dir(&github_workflows_dir)
+            .map(|mut rd| {
+                rd.any(|e| {
+                    e.ok().is_some_and(|entry| {
+                        let p = entry.path();
+                        p.is_file()
+                            && matches!(
+                                p.extension().and_then(|x| x.to_str()),
+                                Some("yml") | Some("yaml")
+                            )
+                    })
+                })
+            })
+            .unwrap_or(false);
+
+        if has_workflows {
+            scripts.push(ScriptFile {
+                path: github_workflows_dir,
+                name: "GitHub Actions".to_string(),
+                category: "GitHub Actions".to_string(),
+                display_name: "🐙 GitHub Actions".to_string(),
+                script_type: ScriptType::GithubActions,
+            });
+        }
     }
 
     // Walk the directory and collect scripts

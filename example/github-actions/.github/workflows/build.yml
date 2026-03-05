@@ -1,0 +1,19 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        run: echo "📥 Checking out source code..."
+      - name: Build
+        run: echo "🔨 Building project in debug mode... done!"
+      - name: Test
+        run: echo "🧪 Running tests... 42/42 passed!"
+      - name: Done
+        run: echo "✅ Build workflow complete!"

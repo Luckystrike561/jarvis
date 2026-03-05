@@ -20,10 +20,10 @@ A beautiful TUI for managing and executing scripts with zero configuration.
 
 ## Features
 
-- **Zero Configuration** - Auto-discovers bash functions, npm scripts, devbox scripts, Taskfile tasks, Makefile targets, Justfile recipes, Cargo commands, Nx targets, Terraform/OpenTofu commands, Gradle tasks, Bazel targets, and Mage targets
+- **Zero Configuration** - Auto-discovers bash functions, npm scripts, devbox scripts, Taskfile tasks, Makefile targets, Justfile recipes, Cargo commands, Nx targets, Terraform/OpenTofu commands, Gradle tasks, Bazel targets, GitHub Actions workflows, and Mage targets
 - **Beautiful TUI** - Modern terminal interface built with Ratatui
 - **11 Built-in Themes** - Catppuccin Mocha/Macchiato/Frappe, Dracula, Nord, Tokyo Night, Solarized Dark, Gruvbox Dark, One Dark, Monokai, and Rose Pine with live preview picker
-- **Multi-Language Support** - Works with `.sh` files, `package.json`, `devbox.json`, `Taskfile.yml`, `Makefile`, `justfile`, `Cargo.toml`, Nx workspaces (`nx.json`/`project.json`), Terraform/OpenTofu (`.tf` files), Gradle (`build.gradle`/`build.gradle.kts`), Bazel (`WORKSPACE`/`BUILD`/`MODULE.bazel`), and Mage (`magefile.go`, `mage.go`)
+- **Multi-Language Support** - Works with `.sh` files, `package.json`, `devbox.json`, `Taskfile.yml`, `Makefile`, `justfile`, `Cargo.toml`, Nx workspaces (`nx.json`/`project.json`), Terraform/OpenTofu (`.tf` files), Gradle (`build.gradle`/`build.gradle.kts`), Bazel (`WORKSPACE`/`BUILD`/`MODULE.bazel`), GitHub Actions (`.github/workflows/*.yml`), and Mage (`magefile.go`, `mage.go`)
 - **Single Binary** - Compile once, run anywhere
 
 ## Installation
@@ -193,6 +193,30 @@ Jarvis discovers Gradle projects and lists available tasks. Supports both the Gr
 
 Jarvis discovers Bazel workspaces and lists binary and test targets using `bazel query`. Binary targets are run with `bazel run` and test targets with `bazel test`. Supports both `bazelisk` and `bazel` with automatic detection.
 
+**GitHub Actions** - From `.github/workflows/*.yml` / `*.yaml`:
+
+Jarvis discovers GitHub Actions workflow files and displays their name, triggers, and jobs in the TUI under a **GitHub Actions** category. Workflows support three execution modes (in priority order):
+
+1. **`act` (local, recommended)** — If [`act`](https://github.com/nektos/act) is installed, runs the workflow locally in Docker via `act -W .github/workflows/<file>`. No GitHub account needed.
+2. **`gh workflow run` (remote)** — If the `gh` CLI is installed and the workflow has a `workflow_dispatch` trigger, dispatches the run to GitHub Actions.
+3. **Informational echo** — Shows the workflow name and install instructions if neither tool is available.
+
+```yaml
+name: CI
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cargo build --release
+```
+
 **Mage** - From `magefile.go` or `mage.go`:
 
 Jarvis discovers Mage targets by running `mage -l`. Annotation comments (`@emoji`, `@description`, `@ignore`) placed above exported Go functions are also parsed for TUI customisation.
@@ -223,6 +247,8 @@ func internalHelper() {}
 > **Note:** Gradle support requires the Gradle wrapper (`gradlew`) or the `gradle` binary. See [gradle.org](https://gradle.org) for installation instructions.
 
 > **Note:** Bazel support requires the `bazelisk` or `bazel` binary. Jarvis checks for `bazelisk` first and falls back to `bazel`. See [bazel.build](https://bazel.build) for installation instructions.
+> **Note:** GitHub Actions discovery is read-only by default. To run workflows **locally**, install `act` (requires Docker): see [github.com/nektos/act](https://github.com/nektos/act) for installation. To trigger `workflow_dispatch` workflows **remotely**, install the `gh` CLI: see [cli.github.com](https://cli.github.com). Jarvis checks for `act` first and falls back to `gh`.
+
 
 > **Note:** Mage support requires the `mage` binary to be installed. See [magefile.org](https://magefile.org) for installation instructions.
 

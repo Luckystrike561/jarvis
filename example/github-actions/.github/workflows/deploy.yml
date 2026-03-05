@@ -1,0 +1,28 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - production
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        run: echo "📥 Checking out source code..."
+      - name: Build release
+        run: echo "📦 Building release binary... done!"
+      - name: Upload artifacts
+        run: echo "⬆️  Uploading artifacts to ${{ inputs.environment }}..."
+      - name: Restart services
+        run: echo "🔄 Restarting services in ${{ inputs.environment }}..."
+      - name: Done
+        run: echo "✅ Deployed to ${{ inputs.environment }} successfully!"

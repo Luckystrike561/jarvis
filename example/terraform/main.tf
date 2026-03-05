@@ -2,8 +2,7 @@
 # See: https://www.terraform.io/ or https://opentofu.org/
 #
 # This is a minimal local-only configuration that requires no cloud credentials.
-# It uses the `null_resource` and `local_file` providers to demonstrate
-# Terraform commands without any real infrastructure.
+# It uses the `local` provider to demonstrate Terraform commands without any real infrastructure.
 
 terraform {
   required_version = ">= 1.0"
@@ -12,10 +11,6 @@ terraform {
     local = {
       source  = "hashicorp/local"
       version = "~> 2.0"
-    }
-    null = {
-      source  = "hashicorp/null"
-      version = "~> 3.0"
     }
   }
 }
@@ -26,25 +21,19 @@ resource "local_file" "hello" {
   filename = "${path.module}/output/hello.txt"
 }
 
-# A null resource that runs a local command
-resource "null_resource" "echo" {
-  provisioner "local-exec" {
-    command = "echo 'Terraform apply completed successfully!'"
-  }
-
-  triggers = {
-    always_run = timestamp()
-  }
+# Another local file resource
+resource "local_file" "config" {
+  content  = "# Auto-generated config\nenv = \"example\"\nversion = \"1.0.0\""
+  filename = "${path.module}/output/config.txt"
 }
 
-# Read the local file back as a data source (demonstrates data block targeting)
-data "local_file" "hello_content" {
-  filename = local_file.hello.filename
+# Output the file path
+output "hello_file_path" {
+  value       = local_file.hello.filename
+  description = "Path to the hello file"
 }
 
-# A module reference (demonstrates module block targeting)
-# Note: This module path doesn't need to exist for Jarvis to discover the block
-module "example" {
-  source = "./modules/example"
-  name   = var.name
+output "config_file_path" {
+  value       = local_file.config.filename
+  description = "Path to the config file"
 }

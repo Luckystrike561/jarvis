@@ -11,6 +11,7 @@
     "just@latest",
     "opentofu@latest",
     "gradle@latest",
+    "act@latest",
     "mage@latest"
   ],
   "shell": {

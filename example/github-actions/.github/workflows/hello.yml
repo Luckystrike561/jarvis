@@ -1,0 +1,16 @@
+name: Hello World
+
+on:
+  workflow_dispatch:
+  push:
+
+jobs:
+  greet:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Say hello
+        run: echo "👋 Hello, World! from GitHub Actions"
+      - name: Show info
+        run: echo "🤖 Running on ${{ runner.os }} — triggered by ${{ github.event_name }}"
+      - name: Done
+        run: echo "✅ Hello workflow complete!"

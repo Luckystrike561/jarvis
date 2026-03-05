@@ -18,6 +18,7 @@
 //! | Terraform / `OpenTofu` | `*.tf` | [`terraform_parser::list_commands`] |
 //! | Gradle | `build.gradle`, `build.gradle.kts` | [`gradle_parser::list_tasks`] |
 //! | Bazel | `WORKSPACE`, `BUILD`, `MODULE.bazel` | [`bazel_parser::list_targets`] |
+//! | GitHub Actions | `.github/workflows/*.yml` | [`github_actions_parser::list_workflows`] |
 //! | Mage | `magefile.go`, `mage.go` | [`mage_parser::list_targets`] |
 //!
 
@@ -25,6 +26,7 @@ pub mod bazel_parser;
 pub mod cargo_parser;
 pub mod devbox_parser;
 pub mod discovery;
+pub mod github_actions_parser;
 pub mod gradle_parser;
 pub mod just_parser;
 pub mod mage_parser;
@@ -43,6 +45,7 @@ pub use discovery::{
     discover_scripts, discover_scripts_shallow, discover_single_file, format_display_name,
     prewarm_tool_checks, ScriptFile, ScriptType,
 };
+pub use github_actions_parser::list_workflows as list_github_workflows;
 pub use gradle_parser::list_tasks as list_gradle_tasks;
 pub use just_parser::list_recipes as list_just_recipes;
 pub use mage_parser::list_targets as list_mage_targets;
