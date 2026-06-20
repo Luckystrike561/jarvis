@@ -25,7 +25,7 @@ jobs:
           - ubuntu-latest
           - macos-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install Devbox
         uses: jetify-com/devbox-install-action@v0.14.0
